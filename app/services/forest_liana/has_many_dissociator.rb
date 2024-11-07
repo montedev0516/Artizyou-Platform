@@ -25,18 +25,11 @@ module ForestLiana
       if !record_ids.nil? && record_ids.any?
         if remove_association
           record_ids.each do |id|
-            associated_records.delete(@association.klass.find(id))
+            associated_records.delete(SchemaUtils.association_ref(@association).find(id))
           end
         end
 
         if @with_deletion
-          record_ids = record_ids.select { |record_id| @association.klass.exists?(record_id) }
-          @resource.transaction do
-            record_ids.each do |id|
-              record = @association.klass.find(id)
-              record.destroy!
-            end
-          end
         end
       end
     end

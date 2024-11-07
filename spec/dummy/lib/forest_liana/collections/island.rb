@@ -26,6 +26,8 @@ class Forest::Island
     enums: %w[a b c],
   }
 
+  action 'test'
+
   action 'my_action',
     fields: [foo],
     hooks: {
@@ -37,6 +39,89 @@ class Forest::Island
           foo = context[:fields].find{|field| field[:field] == 'foo'}
           foo[:value] = 'baz'
           context[:fields]
+        }
+      }
+    }
+
+  action 'my_action_with_layout',
+    fields: [foo],
+    hooks: {
+      :load => -> (context) {
+        [
+          {
+            type: 'Layout',
+            component: 'Page',
+            elements: [
+              {
+                type: 'Layout',
+                component: 'HtmlBlock',
+                content: '<p>test</p>',
+              },
+              {
+                type: 'Layout',
+                component: 'Separator',
+              },
+              foo,
+              {
+                field: 'field 1',
+                type: 'String',
+              },
+              {
+                type: 'Layout',
+                component: 'Separator',
+              },
+              {
+                field: 'field 2',
+                type: 'String',
+              }
+            ]
+          },
+        ]
+      },
+      :change => {
+        'on_foo_changed' => -> (context) {
+          [
+            {
+              type: 'Layout',
+              component: 'Page',
+              elements: [
+                {
+                  type: 'Layout',
+                  component: 'HtmlBlock',
+                  content: '<div style="text-align:center;">
+                            <p>
+                                <strong>Hi #{ctx.form_values["firstName"]} #{ctx.form_values["lastName"]}</strong>,
+                                <br/>here you can put
+                                <strong style="color: red;">all the html</strong> you want.
+                            </p>
+                        </div>
+                        <div style="display: flex; flex-flow: row wrap; justify-content: space-around;">
+                            <a href="https://www.w3schools.com" target="_blank">
+                                <img src="https://www.w3schools.com/html/w3schools.jpg">
+                            </a>
+                            <iframe src="https://www.youtube.com/embed/xHPKuu9-yyw?autoplay=1&mute=1"></iframe>
+                        </div>',
+                },
+                {
+                  type: 'Layout',
+                  component: 'Separator',
+                },
+                foo,
+                {
+                  field: 'field 1',
+                  type: 'String',
+                },
+                {
+                  type: 'Layout',
+                  component: 'Separator',
+                },
+                {
+                  field: 'field 2',
+                  type: 'String',
+                }
+              ]
+            },
+          ]
         }
       }
     }

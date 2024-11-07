@@ -4,12 +4,6 @@ module ForestLiana
     def self.associations(active_record_class)
       active_record_class.reflect_on_all_associations.select do |association|
         begin
-          if (ENV['ENABLE_SUPPORT_POLYMORPHISM'].present? && ENV['ENABLE_SUPPORT_POLYMORPHISM'].downcase == 'true')
-            polymorphic?(association) ? true : !is_active_type?(association.klass)
-          else
-            !polymorphic?(association) && !is_active_type?(association.klass)
-          end
-
         rescue
           FOREST_LOGGER.warn "Unknown association #{association.name} on class #{active_record_class.name}"
           false
@@ -61,26 +55,6 @@ module ForestLiana
     def self.polymorphic?(association)
       association.options[:polymorphic]
     end
-
-    def self.klass(association)
-      return association.klass unless polymorphic?(association)
-
-
-    end
-
-    def self.polymorphic_models(relation)
-      models = []
-      ForestLiana.models.each do |model|
-        unless model.reflect_on_all_associations.select { |association| association.options[:as] == relation.name.to_sym }.empty?
-          models << model
-        end
-      end
-
-      models
-    end
-
-
-    private
 
     def self.find_model_from_abstract_class(abstract_class, collection_name)
       abstract_class.subclasses.find do |subclass|

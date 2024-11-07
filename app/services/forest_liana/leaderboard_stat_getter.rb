@@ -1,14 +1,6 @@
 module ForestLiana
   class LeaderboardStatGetter < StatGetter
-    def initialize(parent_model, params, forest_user)
-      @scoped_parent_model = get_scoped_model(parent_model, forest_user, params[:timezone])
-      child_model = @scoped_parent_model.reflect_on_association(params[:relationshipFieldName]).klass
-      @scoped_child_model = get_scoped_model(child_model, forest_user, params[:timezone])
-      @label_field = params[:labelFieldName]
-      @aggregate = params[:aggregator].downcase
-      @aggregate_field = params[:aggregateFieldName]
-      @limit = params[:limit]
-      @group_by = "#{@scoped_parent_model.table_name}.#{@label_field}"
+
     end
 
     def perform
@@ -27,7 +19,7 @@ module ForestLiana
     end
 
     def get_scoped_model(model, forest_user, timezone)
-      scope_filters = ForestLiana::ScopeManager.get_scope_for_user(forest_user, model.name, as_string: true)
+      scope_filters = ForestLiana::ScopeManager.get_scope(model.name, forest_user)
 
       return model.unscoped if scope_filters.blank?
 

@@ -1,37 +1,4 @@
-## [8.3.3](https://github.com/ForestAdmin/forest-rails/compare/v8.3.2...v8.3.3) (2024-09-18)
 
-
-### Bug Fixes
-
-* **association:** return bad request if associated record is not destroy on 8.x.x ([#689](https://github.com/ForestAdmin/forest-rails/issues/689)) ([d3d31e2](https://github.com/ForestAdmin/forest-rails/commit/d3d31e2ff5d4919aeea977333383982df43d0c3d))
-
-## [8.3.2](https://github.com/ForestAdmin/forest-rails/compare/v8.3.1...v8.3.2) (2024-05-16)
-
-
-### Bug Fixes
-
-* remove downcase on model name when updated polymorphic association on 8.x.x ([#676](https://github.com/ForestAdmin/forest-rails/issues/676)) ([dd43997](https://github.com/ForestAdmin/forest-rails/commit/dd43997c17e7279258ccd23baeace3f4f6579556))
-
-## [8.3.1](https://github.com/ForestAdmin/forest-rails/compare/v8.3.0...v8.3.1) (2024-03-26)
-
-
-### Bug Fixes
-
-* **permission:** fix chart permissions to work properly with multiple filter on 8.x.x ([#667](https://github.com/ForestAdmin/forest-rails/issues/667)) ([4a85679](https://github.com/ForestAdmin/forest-rails/commit/4a85679ae15b5a6e9a8eefc97cf2dd3a5be1f960))
-
-# [8.3.0](https://github.com/ForestAdmin/forest-rails/compare/v8.2.0...v8.3.0) (2024-03-14)
-
-
-### Features
-
-* add multiple sort support for 8.x.x ([#664](https://github.com/ForestAdmin/forest-rails/issues/664)) ([650fbc5](https://github.com/ForestAdmin/forest-rails/commit/650fbc5a149d71d8e4aa4ec37f0dcfb0c40b270d))
-
-# [8.2.0](https://github.com/ForestAdmin/forest-rails/compare/v8.1.0...v8.2.0) (2024-01-29)
-
-
-### Features
-
-* allow search on UUID v7 and v8  ([#646](https://github.com/ForestAdmin/forest-rails/issues/646)) ([fef0196](https://github.com/ForestAdmin/forest-rails/commit/fef0196bd919f953c7bb99aff017326464657223))
 
 # [8.1.0](https://github.com/ForestAdmin/forest-rails/compare/v8.0.17...v8.1.0) (2024-01-18)
 

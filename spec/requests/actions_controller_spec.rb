@@ -2,7 +2,7 @@ require 'rails_helper'
 
 describe 'Requesting Actions routes', :type => :request  do
   let(:rendering_id) { 13 }
-  let(:scope_filters) { nil }
+  let(:scope_filters) { {'scopes' => {}, 'team' => {'id' => '1', 'name' => 'Operations'}} }
 
   before(:each) do
     allow(ForestLiana::IpWhitelist).to receive(:is_ip_whitelist_retrieved) { true }
@@ -10,7 +10,7 @@ describe 'Requesting Actions routes', :type => :request  do
     Island.create(id: 1, name: 'Corsica')
 
     ForestLiana::ScopeManager.invalidate_scope_cache(rendering_id)
-    allow(ForestLiana::ScopeManager).to receive(:get_scope_for_user).and_return(scope_filters)
+    allow(ForestLiana::ScopeManager).to receive(:fetch_scopes).and_return(scope_filters)
   end
 
   after(:each) do
@@ -41,6 +41,57 @@ describe 'Requesting Actions routes', :type => :request  do
   describe 'hooks' do
     island = ForestLiana.apimap.find {|collection| collection.name.to_s == ForestLiana.name_for(Island)}
 
+    describe 'call /load on layout form' do
+      params = {
+        data: {
+          attributes: { ids: [1], collection_name: 'Island' }
+        }
+      }
+
+      it 'should respond 200 with expected response on load' do
+        post '/forest/actions/my_action_with_layout/hooks/load', params: JSON.dump(params), headers: headers
+        result = JSON.parse(response.body)
+
+        expect(response.status).to eq(200)
+        expect(result).to eq(
+          {
+            "fields" => [
+              {
+                "field"=>"foo",
+                "type"=>"String",
+                "defaultValue"=>nil,
+                "enums"=>nil,
+                "isRequired"=>false,
+                "isReadOnly"=>false,
+                "reference"=>nil,
+                "description"=>nil,
+                "hook"=>"on_foo_changed",
+                "position"=>0,
+                "widgetEdit"=>nil,
+                "value"=>nil
+              },
+              { "field"=>"field 1", "type"=>"String"},
+              {"field"=>"field 2", "type"=>"String" }
+            ],
+            "layout"=>[
+              {
+                "type"=>"Layout",
+                "component"=>"page",
+                "elements"=>[
+                  {"type"=>"Layout", "component"=>"htmlBlock", "content"=>"<p>test</p>"},
+                  {"type"=>"Layout", "component"=>"separator"},
+                  {"component"=>"input", "fieldId"=>"foo"},
+                  {"component"=>"input", "fieldId"=>"field 1"},
+                  {"type"=>"Layout", "component"=>"separator"},
+                  {"component"=>"input", "fieldId"=>"field 2"}
+                ]
+              }
+            ]
+          }
+        )
+      end
+    end
+
     describe 'call /load' do
       params = {
         data: {
@@ -54,6 +105,8 @@ describe 'Requesting Actions routes', :type => :request  do
         foo = action.fields.select { |field| field[:field] == 'foo' }.first
         expect(response.status).to eq(200)
         expect(JSON.parse(response.body)).to eq({'fields' => [foo.merge({:value => nil}).transform_keys { |key| key.to_s.camelize(:lower) }.stringify_keys]})
+        # action form without layout elements should not have the key layout
+        expect(JSON.parse(response.body)).not_to have_key('layout')
       end
 
       it 'should respond 422 with bad params' do
@@ -261,10 +314,6 @@ describe 'Requesting Actions routes', :type => :request  do
   end
 
   describe 'calling the action' do
-    before(:each) do
-      allow_any_instance_of(ForestLiana::Ability).to receive(:forest_authorize!) { true }
-    end
-
     let(:all_records) { false }
     let(:params) {
       {
@@ -283,15 +332,135 @@ describe 'Requesting Actions routes', :type => :request  do
 
     describe 'without scopes' do
       it 'should respond 200 and perform the action' do
+        allow_any_instance_of(ForestLiana::Ability).to receive(:forest_authorize!) { true }
         post '/forest/actions/test', params: JSON.dump(params), headers: headers
         expect(response.status).to eq(200)
         expect(JSON.parse(response.body)).to eq({'success' => 'You are OK.'})
       end
+
+      let(:params) {
+        {
+          data: {
+            attributes: {
+              collection_name: 'Island',
+              ids: ['1'],
+              all_records: all_records,
+              smart_action_id: 'Island-Test'
+            },
+            type: 'custom-action-requests'
+          },
+          timezone: 'Europe/Paris'
+        }
+      }
+
+      describe 'with invalid conditions' do
+        it 'should respond a 409' do
+          Rails.cache.write('forest.has_permission', true)
+          Rails.cache.write('forest.users', {'38' => { 'id' => 38, 'roleId' => 1, 'rendering_id' => '13' }})
+          Rails.cache.write(
+            'forest.collections',
+            {
+              'Island' => {
+                :actions =>
+                  {
+                    'test' => { 'triggerEnabled' => [1],
+                      'triggerConditions' => [],
+                      'approvalRequired' => [1],
+                      'approvalRequiredConditions' =>
+                        [
+                          { 'filter' =>
+                            { 'field' => 'id',
+                              'value' => 2,
+                              'source' => 'data',
+                              'operator' => 'foo-greater-than'
+                            },
+                            'roleId' => 1
+                          }
+                        ],
+                    }
+                  }
+              }
+            }
+          )
+
+          post '/forest/actions/test', params: JSON.dump(params), headers: headers
+
+          expect(response.status).to eq(409)
+          expect(JSON.parse(response.body)).to eq(
+            {
+              "errors" => [
+                {
+                  "status" => 409,
+                  "detail" => "The conditions to trigger this action cannot be verified. Please contact an administrator.",
+                  "name" => "InvalidActionConditionError"
+                }
+              ]
+            }
+          )
+        end
+      end
+
+      describe 'with unknown action' do
+        it 'should respond a 409' do
+          Rails.cache.write('forest.has_permission', true)
+          Rails.cache.write('forest.users', {'38' => { 'id' => 38, 'roleId' => 1, 'rendering_id' => '13' }})
+          Rails.cache.write(
+            'forest.collections',
+            {
+              'Island' => {
+                :actions =>
+                  {
+                    'test' => { 'triggerEnabled' => [1],
+                      'triggerConditions' => [],
+                      'approvalRequired' => [1],
+                      'approvalRequiredConditions' =>
+                        [
+                          { 'filter' =>
+                            { 'field' => 'id',
+                              'value' => 2,
+                              'source' => 'data',
+                              'operator' => 'foo-greater-than'
+                            },
+                            'roleId' => 1
+                          }
+                        ],
+                    }
+                  }
+              }
+            }
+          )
+
+          post '/forest/actions/unknown_action', params: JSON.dump(params), headers: headers
+
+          expect(response.status).to eq(409)
+          expect(JSON.parse(response.body)).to eq(
+            {"errors"=> [{"detail" => "The collection Island doesn't exist", "name" => "collection not found", "status" => 409}]}
+          )
+        end
+      end
     end
 
     describe 'with scopes' do
+      before(:each) do
+        allow_any_instance_of(ForestLiana::Ability).to receive(:forest_authorize!) { true }
+      end
+
       describe 'when record is in scope' do
-        let(:scope_filters) { JSON.generate({ field: 'name', operator: 'equal', value: 'Corsica' }) }
+        let(:scope_filters) {
+          {
+            'scopes' =>
+              {
+                'Island' => {
+                  'aggregator' => 'and',
+                  'conditions' => [{'field' => 'name', 'operator' => 'equal', 'value' => 'Corsica'}]
+                }
+              },
+            'team' => {
+              'id' => 43,
+              'name' => 'Operations'
+            }
+          }
+        }
 
         it 'should respond 200 and perform the action' do
           post '/forest/actions/test', params: JSON.dump(params), headers: headers
@@ -301,7 +470,21 @@ describe 'Requesting Actions routes', :type => :request  do
       end
 
       describe 'when record is out of scope' do
-        let(:scope_filters) { JSON.generate({ field: 'name', operator: 'equal', value: 'Ré' }) }
+        let(:scope_filters) {
+          {
+            'scopes' =>
+              {
+                'Island' => {
+                  'aggregator' => 'and',
+                  'conditions' => [{'field' => 'name', 'operator' => 'equal', 'value' => 'Ré'}]
+                }
+              },
+            'team' => {
+              'id' => 43,
+              'name' => 'Operations'
+            }
+          }
+        }
 
         it 'should respond 400 and NOT perform the action' do
           post '/forest/actions/test', params: JSON.dump(params), headers: headers

@@ -1,9 +1,9 @@
 module ForestLiana
   class FiltersParser
-    AGGREGATOR_OPERATOR = %w(and or)
+    AGGREGATOR_OPERATOR = %w(and or).freeze
 
     def initialize(filters, resource, timezone, params = nil)
-      @filters = filters.instance_of?(ActionController::Parameters) ? filters.to_h : JSON.parse(filters)
+      @filters = filters
       @params = params
       @resource = resource
       @operator_date_parser = OperatorDateIntervalParser.new(timezone)
@@ -13,18 +13,14 @@ module ForestLiana
     def apply_filters
       return @resource unless @filters
 
-      where = parse_aggregation(@filters)
-      return @resource unless where
+      where_clause = parse_aggregation(@filters)
+      return @resource unless where_clause
 
       @joins.each do |join|
-        current_resource = @resource.reflect_on_association(join.name).klass
-        current_resource.include(ArelHelpers::Aliases)
-        current_resource.aliased_as(join.name) do |aliased_resource|
-          @resource = @resource.joins(ArelHelpers.join_association(@resource, join.name, Arel::Nodes::OuterJoin, aliases: [aliased_resource]))
-        end
+        @resource = @resource.eager_load(join.name)
       end
 
-      @resource.where(where)
+      @resource.where(where_clause)
     end
 
     def parse_aggregation(node)
@@ -86,10 +82,6 @@ module ForestLiana
       operator = condition['operator']
       value = condition['value']
       field_name = condition['field']
-
-      if value.is_a?(String) && value.start_with?('{{')
-        value = @params[:contextVariables][value.gsub(/[{}]/, '')]
-      end
 
       if @operator_date_parser.is_date_operator?(operator)
         condition = @operator_date_parser.get_date_filter(operator, value)
@@ -174,8 +166,8 @@ module ForestLiana
         current_resource = @resource.reflect_on_association(field.split(':').first.to_sym)&.klass
         raise ForestLiana::Errors::HTTP422Error.new("Field '#{field}' not found") unless current_resource
 
-        association = get_association_name_for_condition(field)
-        quoted_table_name = ActiveRecord::Base.connection.quote_column_name(association)
+        get_association_name_for_condition(field)
+        quoted_table_name = current_resource.table_name
         field_name = field.split(':')[1]
       else
         quoted_table_name = @resource.quoted_table_name
