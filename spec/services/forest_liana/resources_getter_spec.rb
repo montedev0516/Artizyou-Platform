@@ -4,9 +4,9 @@ module ForestLiana
     let(:pageSize) { 10 }
     let(:pageNumber) { 1 }
     let(:sort) { 'id' }
-    let(:fields) { }
-    let(:filters) { }
-    let(:scopes) { { } }
+    let(:fields) {}
+    let(:filters) {}
+    let(:scopes) { {'scopes' => {}, 'team' => {'id' => '1', 'name' => 'Operations'}} }
     let(:rendering_id) { 13 }
     let(:user) { { 'id' => '1', 'rendering_id' => rendering_id } }
 
@@ -22,7 +22,21 @@ module ForestLiana
       allow(ForestLiana::ScopeManager).to receive(:fetch_scopes).and_return(scopes)
     end
 
+    def clean_database
+      [
+        Driver,
+        Island,
+        Location,
+        Manufacturer,
+        Product,
+        Tree,
+        User,
+      ].each(&:destroy_all)
+    end
+
     before(:each) do
+      clean_database
+
       users = ['Michel', 'Robert', 'Vince', 'Sandro', 'Olesya', 'Romain', 'Valentin', 'Jason', 'Arnaud', 'Jeff', 'Steve', 'Marc', 'Xavier', 'Paul', 'Mickael', 'Mike', 'Maxime', 'Gertrude', 'Monique', 'Mia', 'Rachid', 'Edouard', 'Sacha', 'Caro', 'Amand', 'Nathan', 'Noémie', 'Robin', 'Gaelle', 'Isabelle']
       .map { |name| User.create(name: name) }
 
@@ -50,15 +64,94 @@ module ForestLiana
         { :coordinates => '32154', :island => islands[4] }
       ].map { |location| Location.create(coordinates: location[:coordinates], island: location[:island]) }
 
+      manufacturers = ['Orange', 'Pear'].map { |name| Manufacturer.create!(name: 'name') }
+
+      drivers = ['Baby driver', 'Taxi driver'].map { |firstname| Driver.create!(firstname: firstname) }
+
+      products = [
+        { name: 'Valencia', uri: 'https://valencia.com', manufacturer: manufacturers[0], driver: drivers[0] },
+        { name: 'Blood', uri: 'https://blood.com', manufacturer: manufacturers[0], driver: drivers[1] },
+        { name: 'Conference', uri: 'https://conference.com', manufacturer: manufacturers[1], driver: drivers[0] },
+        { name: 'Concorde', uri: 'https://concorde.com', manufacturer: manufacturers[1], driver: drivers[1] }
+      ].map {|attributes| Product.create!(attributes) }
+
       reference = Reference.create()
       init_scopes
     end
 
-    after(:each) do
-      User.destroy_all
-      Island.destroy_all
-      Location.destroy_all
-      Tree.destroy_all
+    describe 'records eager loading' do
+      let(:resource) { Product }
+      let(:fields) { { resource.name => 'id,name,manufacturer', 'manufacturer' => 'name' } }
+
+      shared_context 'resource current_database' do
+        before do
+          connection = resource.connection
+
+          def connection.current_database
+            'db/test.sqlite3'
+          end
+        end
+
+        after do
+          resource.connection.singleton_class.remove_method(:current_database)
+        end
+      end
+
+      shared_examples 'left outer join' do
+        it 'should perform a left outer join with the association' do
+          expect(getter.perform.to_sql).to match(/LEFT OUTER JOIN "manufacturers"/)
+        end
+      end
+
+      shared_examples 'records' do
+        it 'should get only the expected records' do
+          getter.perform
+
+          records = getter.records
+
+          count = getter.count
+
+          expect(records.count).to eq 4
+          expect(count).to eq 4
+          expect(records.map(&:name)).to match_array(%w[Valencia Blood Conference Concorde])
+        end
+      end
+
+      context 'when the connections do not support current_database' do
+        include_examples 'left outer join'
+        include_examples 'records'
+      end
+
+      context 'when the included association uses a different database connection' do
+        let(:fields) { { resource.name => 'id,name,driver', 'driver' => 'firstname' } }
+
+        before do
+          association_connection = resource.reflect_on_association(:driver).klass.connection
+
+          def association_connection.current_database
+            'db/different_test.sqlite3'
+          end
+        end
+
+        after do
+          resource.reflect_on_association(:driver).klass.connection.singleton_class.remove_method(:current_database)
+        end
+
+        include_context 'resource current_database'
+
+        include_examples 'records'
+
+        it 'does not perform a left outer join with the association' do
+          expect(getter.perform.to_sql).not_to match(/LEFT OUTER JOIN "drivers"/)
+        end
+      end
+
+      context 'when the included association uses the same database connection' do
+        include_context 'resource current_database'
+
+        include_examples 'left outer join'
+        include_examples 'records'
+      end
     end
 
     describe 'when there are more records than the page size' do
@@ -167,6 +260,46 @@ module ForestLiana
         expect(records.count).to eq 5
         expect(count).to eq 5
         expect(records.map(&:id)).to eq [1, 4, 5, 3, 2]
+      end
+    end
+
+    context 'when fields is given' do
+      let(:resource) { Island }
+      let(:filters) { {
+        field: 'location:id',
+        operator: 'equal',
+        value: 1,
+      }.to_json }
+
+      it 'should get only the expected records' do
+        getter.perform
+        records = getter.records
+        count = getter.count
+
+        expect(records.count).to eq 1
+        expect(count).to eq 1
+        expect(records.map(&:id)).to eq [1]
+      end
+
+      it 'should include associated table only once' do
+        sql_query = getter.perform.to_sql
+        location_includes_count = sql_query.scan('LEFT OUTER JOIN "locations"').count
+        expect(location_includes_count).to eq(1)
+      end
+    end
+
+    describe 'when getting instance dependent associations' do
+      let(:resource) { Island }
+      let(:fields) { { 'Island' => 'id,eponymous_tree', 'eponymous_tree' => 'id,name'} }
+
+      it 'should get only the expected records' do
+        getter.perform
+        records = getter.records
+        count = getter.count
+
+        expect(records.count).to eq Island.count
+        expect(count).to eq Island.count
+        expect(records.map(&:name)).to match_array(Island.pluck(:name))
       end
     end
 
@@ -387,16 +520,16 @@ module ForestLiana
       let(:filters) { }
       let(:scopes) {
         {
-          'Island' => {
-            'scope'=> {
-              'filter'=> {
+          'scopes' =>
+            {
+              'Island' => {
                 'aggregator' => 'and',
-                'conditions' => [
-                  { 'field' => 'name', 'operator' => 'contains', 'value' => 'u' }
-                ]
-              },
-              'dynamicScopesValues' => { }
-            }
+                'conditions' => [{'field' => 'name', 'operator' => 'contains', 'value' => 'u'}]
+              }
+            },
+          'team' => {
+            'id' => 43,
+            'name' => 'Operations'
           }
         }
       }

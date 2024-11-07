@@ -1,11 +1,71 @@
 module ForestLiana
   describe Bootstrapper do
+    before do
+      allow(ForestLiana).to receive(:env_secret).and_return(nil)
+    end
+
     describe 'setup_forest_liana_meta' do
       it "should put statistic data related to user stack on a dedicated object" do
         expect(ForestLiana.meta[:stack])
           .to include(:orm_version)
         expect(ForestLiana.meta[:stack])
           .to include(:database_type)
+      end
+    end
+
+    describe 'models' do
+      let(:application_models) do
+        ForestLiana.models.reject do |model|
+          rails_models.any? { |rails_model| model <= rails_model }
+        end
+      end
+      let(:rails_models) { [ActiveRecord::InternalMetadata, ActiveRecord::SchemaMigration] }
+
+      let(:expected_application_models) do
+        [
+          Address,
+          Island,
+          Location,
+          Manufacturer,
+          Owner,
+          Product,
+          Reference,
+          Town,
+          Tree,
+          User,
+          Driver,
+          Car,
+        ]
+      end
+
+      it 'should populate the models correctly' do
+        ForestLiana::Bootstrapper.new
+
+        expect(ForestLiana.models).to match_array(ForestLiana.models.uniq)
+        expect(ForestLiana.models).to include(*rails_models)
+        expect(application_models).to match_array(expected_application_models)
+      end
+
+      it 'should generate serializers for all models' do
+        factory = instance_double(ForestLiana::SerializerFactory, serializer_for: nil)
+        allow(ForestLiana::SerializerFactory).to receive(:new).and_return(factory)
+
+        ForestLiana::Bootstrapper.new
+
+        expected_application_models.each do |model|
+          expect(factory).to have_received(:serializer_for).with(model).once
+        end
+      end
+
+      it 'should generate controllers for all models' do
+        factory = instance_double(ForestLiana::ControllerFactory, controller_for: nil)
+        allow(ForestLiana::ControllerFactory).to receive(:new).and_return(factory)
+
+        ForestLiana::Bootstrapper.new
+
+        expected_application_models.each do |model|
+          expect(factory).to have_received(:controller_for).with(model).once
+        end
       end
     end
 
@@ -102,7 +162,6 @@ module ForestLiana
 
 
       it "Should return actions hooks empty for the island collection" do
-        allow(ForestLiana).to receive(:env_secret).and_return(nil)
         bootstrapper = Bootstrapper.new
         content = JSON.parse(schema)
         bootstrapper.instance_variable_set(:@collections_sent, content['collections'])

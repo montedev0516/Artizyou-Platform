@@ -37,20 +37,27 @@ module ForestLiana
     private
 
     def compute_includes
-      @includes = @association.klass
+      @includes = SchemaUtils.association_ref(@association)
         .reflect_on_all_associations
         .select do |association|
-          inclusion = !association.options[:polymorphic] &&
-            SchemaUtils.model_included?(association.klass) &&
-            [:belongs_to, :has_and_belongs_to_many].include?(association.macro)
 
-          if @field_names_requested
-            inclusion && @field_names_requested.include?(association.name)
+
+          if SchemaUtils.polymorphic?(association)
+            inclusion = SchemaUtils.polymorphic_models(association)
+                                   .all? { |model| SchemaUtils.model_included?(model) } &&
+              [:belongs_to, :has_and_belongs_to_many].include?(association.macro)
           else
-            inclusion
+            inclusion = SchemaUtils.model_included?(association.klass) &&
+              [:belongs_to, :has_and_belongs_to_many].include?(association.macro)
           end
-        end
-        .map { |association| association.name.to_s }
+
+            if @field_names_requested
+              inclusion && @field_names_requested.include?(association.name)
+            else
+              inclusion
+            end
+          end
+        .map { |association| association.name }
     end
 
     def field_names_requested
@@ -64,12 +71,8 @@ module ForestLiana
     end
 
     def prepare_query
-      @records = @search_query_builder.perform(
-        get_resource()
-          .find(@params[:id])
-          .send(@params[:association_name])
-          .eager_load(@includes)
-      )
+      association = get_resource().find(@params[:id]).send(@params[:association_name])
+      @records = optimize_record_loading(association, @search_query_builder.perform(association))
     end
 
     def offset
