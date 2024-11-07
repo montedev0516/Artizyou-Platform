@@ -1,7 +1,6 @@
 PATH
   remote: .
   specs:
-
       arel-helpers
       bcrypt
       deepsort
