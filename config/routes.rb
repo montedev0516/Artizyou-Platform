@@ -20,6 +20,9 @@ ForestLiana::Engine.routes.draw do
   post '/stats/:collection' => 'stats#get'
   post '/stats' => 'stats#get_with_live_query'
 
+  # Scopes
+  post '/scope-cache-invalidation' => 'scopes#invalidate_scope_cache'
+
   # Stripe Integration
   get '(*collection)_stripe_payments' => 'stripe#payments'
   get ':collection/:id/stripe_payments' => 'stripe#payments'
@@ -56,8 +59,6 @@ ForestLiana::Engine.routes.draw do
   delete ':collection/:id', to: router
   delete ':collection', to: router
 
-  # Smart Actions forms value
-  post 'actions/:action_name/values' => 'actions#values'
-  post 'actions/:action_name/hooks/load' => 'actions#load'
-  post 'actions/:action_name/hooks/change' => 'actions#change'
+  draw(:actions)
+
 end

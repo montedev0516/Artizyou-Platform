@@ -1,16 +1,16 @@
 module ForestLiana
   class AssociationsController < ForestLiana::ApplicationController
     if Rails::VERSION::MAJOR < 4
-      before_filter :find_resource
-      before_filter :find_association
+      before_filter :find_resource, except: :count
+      before_filter :find_association, except: :count
     else
-      before_action :find_resource
-      before_action :find_association
+      before_action :find_resource, except: :count
+      before_action :find_association, except: :count
     end
 
     def index
       begin
-        getter = HasManyGetter.new(@resource, @association, params)
+        getter = HasManyGetter.new(@resource, @association, params, forest_user)
         getter.perform
 
         respond_to do |format|
@@ -18,18 +18,22 @@ module ForestLiana
           format.csv { render_csv(getter, SchemaUtils.association_ref(@association)) }
         end
       rescue => error
+        FOREST_REPORTER.report error
         FOREST_LOGGER.error "Association Index error: #{error}\n#{format_stacktrace(error)}"
         internal_server_error
       end
     end
 
     def count
+      find_resource
+      find_association
       begin
-        getter = HasManyGetter.new(@resource, @association, params)
+        getter = HasManyGetter.new(@resource, @association, params, forest_user)
         getter.count
 
         render serializer: nil, json: { count: getter.records_count }
       rescue => error
+        FOREST_REPORTER.report error
         FOREST_LOGGER.error "Association Index Count error: #{error}\n#{format_stacktrace(error)}"
         internal_server_error
       end
@@ -41,12 +45,13 @@ module ForestLiana
         updater.perform
 
         if updater.errors
-          render serializer: nil, json: JSONAPI::Serializer.serialize_errors(
+          render serializer: nil, json: ForestAdmin::JSONAPI::Serializer.serialize_errors(
             updater.errors), status: 422
         else
           head :no_content
         end
       rescue => error
+        FOREST_REPORTER.report error
         FOREST_LOGGER.error "Association Update error: #{error}\n#{format_stacktrace(error)}"
         internal_server_error
       end
@@ -59,6 +64,7 @@ module ForestLiana
 
         head :no_content
       rescue => error
+        FOREST_REPORTER.report error
         FOREST_LOGGER.error "Association Associate error: #{error}\n#{format_stacktrace(error)}"
         internal_server_error
       end
@@ -66,12 +72,15 @@ module ForestLiana
 
     def dissociate
       begin
-        dissociator = HasManyDissociator.new(@resource, @association, params)
+        dissociator = HasManyDissociator.new(@resource, @association, params, forest_user)
         dissociator.perform
 
         head :no_content
+      rescue ActiveRecord::RecordNotDestroyed => error
+        render json: { errors: [{ status: :bad_request, detail: error.message }] }, status: :bad_request
       rescue => error
-        FOREST_LOGGER.error "Association Associate error: #{error}\n#{format_stacktrace(error)}"
+        FOREST_REPORTER.report error
+        FOREST_LOGGER.error "Association Dissociate error: #{error}\n#{format_stacktrace(error)}"
         internal_server_error
       end
     end
