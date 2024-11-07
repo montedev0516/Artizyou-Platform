@@ -1,6 +1,6 @@
 module ForestLiana
   class SearchQueryBuilder
-    REGEX_UUID = /\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i
+    REGEX_UUID = /\A[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i
 
     attr_reader :fields_searched
 
@@ -31,6 +31,7 @@ module ForestLiana
             begin
               @records = field[:search].call(@records, @search)
             rescue => exception
+              FOREST_REPORTER.report exception
               FOREST_LOGGER.error "Cannot search properly on Smart Field:\n" \
                 "#{exception}"
             end
@@ -60,7 +61,7 @@ module ForestLiana
         conditions = []
 
         @resource.columns.each_with_index do |column, index|
-          @fields_searched << column.name if text_type? column.type
+          @fields_searched << column.name if text_type?(column.type) || column.type == :uuid
           column_name = format_column_name(@resource.table_name, column.name)
           if (@collection.search_fields && !@collection.search_fields.include?(column.name))
             conditions
@@ -72,6 +73,8 @@ module ForestLiana
               conditions << "#{@resource.table_name}.id = :search_value_for_uuid"
             end
           # NOTICE: Rails 3 do not have a defined_enums method
+          elsif REGEX_UUID.match(@search) && column.type == :uuid
+            conditions << "#{column_name}  = :search_value_for_uuid"
           elsif @resource.respond_to?(:defined_enums) &&
             @resource.defined_enums.has_key?(column.name) &&
             !@resource.defined_enums[column.name][@search.downcase].nil?
@@ -101,14 +104,17 @@ module ForestLiana
               end
               association_search = association_search.compact
             end
+
             if @includes.include? association.to_sym
               resource = @resource.reflect_on_association(association.to_sym)
-              resource.klass.columns.each do |column|
-                if !(column.respond_to?(:array) && column.array) && text_type?(column.type)
-                  if @collection.search_fields.nil? || (association_search &&
-                    association_search.include?(column.name))
-                    conditions << association_search_condition(resource.table_name,
-                      column.name)
+              unless (SchemaUtils.polymorphic?(resource))
+                resource.klass.columns.each do |column|
+                  if !(column.respond_to?(:array) && column.array) && text_type?(column.type)
+                    if @collection.search_fields.nil? || (association_search &&
+                      association_search.include?(column.name))
+                      conditions << association_search_condition(resource.table_name,
+                        column.name)
+                    end
                   end
                 end
               end
@@ -157,12 +163,9 @@ module ForestLiana
     end
 
     def sort_query
-      column = nil
-      order = 'DESC'
-
       if @params[:sort]
         @params[:sort].split(',').each do |field|
-          order_detected = detect_sort_order(@params[:sort])
+          order_detected = detect_sort_order(field)
           order = order_detected.upcase
           field.slice!(0) if order_detected == :desc
 
@@ -172,31 +175,22 @@ module ForestLiana
           else
             column = field
           end
+
+          @records = @records.order(Arel.sql("#{column} #{order}"))
         end
-      elsif @resource.column_names.include?('created_at')
-        column = ForestLiana::AdapterHelper.format_column_name(@resource.table_name, 'created_at')
-      elsif @resource.column_names.include?('id')
-        column = ForestLiana::AdapterHelper.format_column_name(@resource.table_name, 'id')
       end
 
-      if column
-        @records = @records.order(Arel.sql("#{column} #{order}"))
-      else
-        @records
-      end
+      @records
     end
 
     def detect_reference(param)
       ref, field = param.split('.')
 
       if ref && field
-        association = @resource.reflect_on_all_associations
-          .find {|a| a.name == ref.to_sym }
-
-        referenced_table = association ? association_table_name(association.name) : ref
+        association = @resource.reflect_on_all_associations().find {|a| a.name == ref.to_sym }
 
         ForestLiana::AdapterHelper
-          .format_column_name(referenced_table, field)
+          .format_column_name("#{association.name}_#{@resource.table_name}", field)
       else
         param
       end

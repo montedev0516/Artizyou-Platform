@@ -3,13 +3,13 @@ module ForestLiana
     attr_accessor :record
 
     def perform
-      return if @params[:aggregate].blank?
-      resource = get_resource().eager_load(@includes)
+      return if @params[:aggregator].blank?
+      resource = optimize_record_loading(@resource, get_resource)
 
-      filters = ForestLiana::ScopeManager.append_scope_for_user(@params[:filters], @user, @resource.name)
+      filters = ForestLiana::ScopeManager.append_scope_for_user(@params[:filter], @user, @resource.name, @params['contextVariables'])
 
       unless filters.blank?
-        filter_parser = FiltersParser.new(filters, resource, @params[:timezone])
+        filter_parser = FiltersParser.new(filters, resource, @params[:timezone], @params)
         resource = filter_parser.apply_filters
         raw_previous_interval = filter_parser.get_previous_interval_condition
 
@@ -19,29 +19,29 @@ module ForestLiana
       end
 
       @record = Model::Stat.new(value: {
-        countCurrent: count(resource),
-        countPrevious: previous_value ? count(previous_value) : nil
+        countCurrent: aggregate(resource),
+        countPrevious: previous_value ? aggregate(previous_value) : nil
       })
     end
 
     private
 
-    def count(value)
-      uniq = @params[:aggregate].downcase == 'count'
+    def aggregate(value)
+      uniq = aggregator == 'count'
 
       if Rails::VERSION::MAJOR >= 4
         if uniq
           # NOTICE: uniq is deprecated since Rails 5.0
           value = Rails::VERSION::MAJOR >= 5 ? value.distinct : value.uniq
         end
-        value.send(@params[:aggregate].downcase, aggregate_field)
+        value.send(aggregator, aggregate_field)
       else
-        value.send(@params[:aggregate].downcase, aggregate_field, distinct: uniq)
+        value.send(aggregator, aggregate_field, distinct: uniq)
       end
     end
 
     def aggregate_field
-      @params[:aggregate_field] || @resource.primary_key
+      @params[:aggregateFieldName] || @resource.primary_key
     end
 
   end

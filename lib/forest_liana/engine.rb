@@ -8,6 +8,21 @@ require 'bcrypt'
 require_relative 'bootstrapper'
 require_relative 'collection'
 
+module Rack
+  class Cors
+    class Resource
+      def to_preflight_headers(env)
+        h = to_headers(env)
+        h['Access-Control-Allow-Private-Network'] = 'true' if env['HTTP_ACCESS_CONTROL_REQUEST_PRIVATE_NETWORK'] == 'true'
+        if env[HTTP_ACCESS_CONTROL_REQUEST_HEADERS]
+          h.merge!('Access-Control-Allow-Headers' => env[HTTP_ACCESS_CONTROL_REQUEST_HEADERS])
+        end
+        h
+      end
+    end
+  end
+end
+
 module ForestLiana
   class Engine < ::Rails::Engine
     isolate_namespace ForestLiana
@@ -37,6 +52,7 @@ module ForestLiana
         end
         nil
       rescue => exception
+        FOREST_REPORTER.report exception
         exception
       end
     end
@@ -51,6 +67,7 @@ module ForestLiana
         ActiveRecord::Base.connection_pool.with_connection { |connection| connection.active? }
       rescue => error
         database_available = false
+        FOREST_REPORTER.report error
         FOREST_LOGGER.error "No Apimap sent to Forest servers, it seems that the database is not accessible:\n#{error}"
       end
       database_available
@@ -75,6 +92,7 @@ module ForestLiana
 
     config.after_initialize do |app|
       if error
+        FOREST_REPORTER.report error
         FOREST_LOGGER.error "Impossible to set the whitelisted Forest " \
           "domains for CORS constraint:\n#{error}"
       end
@@ -89,7 +107,7 @@ module ForestLiana
             if ENV['FOREST_DEACTIVATE_AUTOMATIC_APIMAP']
               FOREST_LOGGER.warn "DEPRECATION WARNING: FOREST_DEACTIVATE_AUTOMATIC_APIMAP option has been renamed. Please use FOREST_DISABLE_AUTO_SCHEMA_APPLY instead."
             end
-            bootstrapper.synchronize unless ENV['FOREST_DEACTIVATE_AUTOMATIC_APIMAP'] || ENV['FOREST_DISABLE_AUTO_SCHEMA_APPLY'] || Rails.env.test?
+            bootstrapper.synchronize unless ENV['FOREST_DEACTIVATE_AUTOMATIC_APIMAP'] == true || ENV['FOREST_DISABLE_AUTO_SCHEMA_APPLY'] == true || Rails.env.test?
           end
         end
       end
