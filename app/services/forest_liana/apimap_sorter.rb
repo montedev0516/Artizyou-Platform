@@ -29,6 +29,7 @@ module ForestLiana
       'relationship',
       'widget',
       'validations',
+      'polymorphic_referenced_models',
     ]
     KEYS_ACTION = [
       'name',
@@ -40,6 +41,8 @@ module ForestLiana
       'download',
       'fields',
       'hooks',
+      'description',
+      'submit_button_label',
     ]
     KEYS_ACTION_FIELD = [
       'field',
@@ -52,6 +55,7 @@ module ForestLiana
       'description',
       'position',
       'widget',
+      'hook',
     ]
     KEYS_SEGMENT = ['name']
 
@@ -92,6 +96,7 @@ module ForestLiana
           end
         end
 
+        @apimap['meta']['stack'] = reorder_keys_basic(@apimap['meta']['stack'])
         @apimap['meta'] = reorder_keys_basic(@apimap['meta'])
         @apimap
       rescue => exception

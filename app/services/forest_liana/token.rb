@@ -19,8 +19,11 @@ module ForestLiana
         first_name: user['first_name'],
         last_name: user['last_name'],
         team: user['teams'][0],
+        role: user['role'],
+        tags: user['tags'],
         rendering_id: rendering_id,
-        exp: expiration_in_seconds()
+        exp: expiration_in_seconds(),
+        permission_level: user['permission_level'],
       }, ForestLiana.auth_secret, 'HS256')
     end
   end

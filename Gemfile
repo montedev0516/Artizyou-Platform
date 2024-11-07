@@ -13,7 +13,8 @@ gemspec
 # To use a debugger
 group :development, :test do
   gem 'byebug'
-  gem 'rspec-rails', '3.8.2'
+  gem 'rspec-rails'
+  gem "timecop"
 end
 
 group :test do
@@ -22,16 +23,17 @@ group :test do
   gem 'simplecov', '~> 0.17.0', require: false
 end
 
-gem 'rails', '6.0.3.6'
-gem 'jsonapi-serializers', '1.0.1'
+gem 'rails', '6.1.7.9'
+gem 'forestadmin-jsonapi-serializers'
 gem 'rack-cors'
-gem 'arel-helpers', '2.11.0'
+gem 'arel-helpers', '2.14.0'
 gem 'groupdate', '5.2.2'
 gem 'useragent'
 gem 'jwt'
 gem 'bcrypt'
-gem 'httparty', '0.18.1'
+gem 'httparty', '0.21.0'
 gem 'ipaddress', '0.8.3'
-gem 'openid_connect', '1.2.0'
+gem 'openid_connect', '1.4.2'
 gem 'json'
-gem 'json-jwt', '1.12.0'
+gem 'json-jwt', '>= 1.16'
+gem 'deepsort'

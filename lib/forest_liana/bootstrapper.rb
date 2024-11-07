@@ -5,7 +5,12 @@ module ForestLiana
   class Bootstrapper
     SCHEMA_FILENAME = File.join(Dir.pwd, '.forestadmin-schema.json')
 
-    def initialize
+    def initialize(reset_api_map = false)
+      if reset_api_map
+        ForestLiana.apimap = []
+        ForestLiana.models = []
+      end
+
       @integration_stripe_valid = false
       @integration_intercom_valid = false
 
@@ -18,11 +23,14 @@ module ForestLiana
         ForestLiana.auth_secret = ForestLiana.auth_key
       end
 
-      unless Rails.application.config.action_controller.perform_caching || Rails.env.test? || ForestLiana.forest_client_id
+      if ForestLiana.forest_client_id
+        FOREST_LOGGER.warn "DEPRECATION WARNING: The use of " \
+          "ForestLiana.forest_client_id is deprecated. It's not needed anymore."
+      end
+
+      unless Rails.application.config.action_controller.perform_caching || Rails.env.test?
         FOREST_LOGGER.error "You need to enable caching on your environment to use Forest Admin.\n" \
-          "For a development environment, run: `rails dev:cache`\n" \
-          "Or setup a static forest_client_id by following this part of the documentation:\n" \
-          "https://docs.forestadmin.com/documentation/how-tos/maintain/upgrade-notes-rails/upgrade-to-v6#setup-a-static-clientid"
+          "For a development environment, run: `rails dev:cache`"
       end
 
       fetch_models
@@ -55,12 +63,12 @@ module ForestLiana
         @meta_sent = ForestLiana.meta
         SchemaFileUpdater.new(SCHEMA_FILENAME, @collections_sent, @meta_sent).perform()
       else
-        if File.exists?(SCHEMA_FILENAME)
+        if File.exist?(SCHEMA_FILENAME)
           begin
             content = JSON.parse(File.read(SCHEMA_FILENAME))
             @collections_sent = content['collections']
             @meta_sent = content['meta']
-          rescue JSON::JSONError
+
             FOREST_LOGGER.error "The content of .forestadmin-schema.json file is not a correct JSON."
             FOREST_LOGGER.error "The schema cannot be synchronized with Forest Admin servers."
           end
@@ -71,38 +79,25 @@ module ForestLiana
       end
     end
 
-    def is_sti_parent_model?(model)
-      return false unless model.try(:table_exists?)
-
-      model.inheritance_column && model.columns.find { |column| column.name == model.inheritance_column }
-    end
-
     def analyze_model?(model)
       model && model.table_exists? && !SchemaUtils.habtm?(model) &&
         SchemaUtils.model_included?(model)
     end
 
     def fetch_models
-      ActiveRecord::Base.subclasses.each { |model| fetch_model(model) }
+      ActiveRecord::Base.descendants.each { |model| fetch_model(model) }
     end
 
     def fetch_model(model)
-      begin
-        if model.abstract_class?
-          model.descendants.each { |submodel| fetch_model(submodel) }
-        else
-          if is_sti_parent_model?(model)
-            model.descendants.each { |submodel_sti| fetch_model(submodel_sti) }
-          end
+      return if model.abstract_class?
+      return if ForestLiana.models.include?(model)
+      return unless analyze_model?(model)
 
-          if analyze_model?(model)
-            ForestLiana.models << model
-          end
-        end
-      rescue => exception
-        FOREST_LOGGER.error "Cannot fetch properly model #{model.name}:\n" \
+      ForestLiana.models << model
+    rescue => exception
+      FOREST_REPORTER.report exception
+      FOREST_LOGGER.error "Cannot fetch properly model #{model.name}:\n" \
           "#{exception}"
-      end
     end
 
     def cast_to_array value
@@ -110,14 +105,14 @@ module ForestLiana
     end
 
     def create_factories
-      ForestLiana.models.uniq.map do |model|
+      ForestLiana.models.map do |model|
         ForestLiana::SerializerFactory.new.serializer_for(model)
         ForestLiana::ControllerFactory.new.controller_for(model)
       end
 
       # Monkey patch the find_serializer_class_name method to specify the
       # good serializer to use.
-      ::JSONAPI::Serializer.class_eval do
+      ::ForestAdmin::JSONAPI::Serializer.class_eval do
         def self.find_serializer_class_name(record, options)
           if record.respond_to?(:jsonapi_serializer_class_name)
             record.jsonapi_serializer_class_name.to_s
@@ -181,10 +176,12 @@ module ForestLiana
 
     def setup_forest_liana_meta
       ForestLiana.meta = {
-        database_type: database_type,
         liana: 'forest-rails',
-        liana_version: ForestLiana::VERSION,
-        orm_version: Gem.loaded_specs["activerecord"].version.version
+        liana_version: ForestLiana::VERSION.sub('.beta', '-beta'),
+        stack: {
+           database_type: database_type,
+           orm_version: Gem.loaded_specs["activerecord"].version.version,
+        }
       }
     end
 

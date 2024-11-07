@@ -3,6 +3,12 @@ require 'csv'
 
 module ForestLiana
   class ApplicationController < ForestLiana::BaseController
+    rescue_from ForestLiana::Ability::Exceptions::AccessDenied, with: :render_error
+    rescue_from ForestLiana::Errors::HTTP403Error, with: :render_error
+    rescue_from ForestLiana::Errors::HTTP422Error, with: :render_error
+    rescue_from ForestLiana::Ability::Exceptions::ActionConditionError, with: :render_error
+    rescue_from ForestLiana::Ability::Exceptions::UnknownCollection, with: :render_error
+
     def self.papertrail?
       Object.const_get('PaperTrail::Version').is_a?(Class) rescue false
     end
@@ -32,16 +38,40 @@ module ForestLiana
       @jwt_decoded_token
     end
 
+    def define_belongsTo_id(records, already_mapped_records = {})
+      records.each do |record|
+        if !already_mapped_records.key?(record.class.name)
+          already_mapped_records[record.class.name] = []
+        end
+        if !already_mapped_records[record.class.name].include? record.id
+          already_mapped_records[record.class.name] << record.id
+          @associations = record.class.reflect_on_all_associations
+          @associations.each do |association|
+            if [:belongs_to, :has_one].include?(association.macro) &&
+              !record[association.name] &&
+              !record.association(association.name).loaded?
+              record.send("build_#{association.name}", "#{association.join_primary_key}": record.send(association.join_foreign_key))
+            elsif record.association(association.name).loaded? && !record.send(association.name).nil?
+              if [:belongs_to, :has_one].include?(association.macro)
+                define_belongsTo_id([record.send(association.name)], already_mapped_records)
+              else
+                define_belongsTo_id(record.send(association.name), already_mapped_records)
+              end
+            end
+          end
+        end
+      end
+    end
+
     def serialize_model(record, options = {})
       options[:is_collection] = false
-      json = JSONAPI::Serializer.serialize(record, options)
+      json = ForestAdmin::JSONAPI::Serializer.serialize(record, options)
 
       force_utf8_encoding(json)
     end
 
     def serialize_models(records, options = {}, fields_searched = [])
       options[:is_collection] = true
-      json = JSONAPI::Serializer.serialize(records, options)
 
       if options[:params] && options[:params][:search]
         # NOTICE: Add the Smart Fields with a 'String' type.
@@ -86,20 +116,27 @@ module ForestLiana
       end
     end
 
-    def get_smart_action_context
-      begin
-        params[:data][:attributes].values[0].to_hash.symbolize_keys
-      rescue => error
-        FOREST_LOGGER.error "Smart Action context retrieval error: #{error}"
-        {}
-      end
-    end
-
     def internal_server_error
       head :internal_server_error
     end
 
+    def deactivate_count_response
+      render serializer: nil, json: { meta: { count: 'deactivated'} }
+    end
+
     private
+
+    def render_error(exception)
+      errors = {
+        status: exception.error_code,
+        detail: exception.message,
+      }
+
+      errors['name'] = exception.name if exception.try(:name)
+      errors['data'] = exception.data if exception.try(:data)
+
+      render json: { errors: [errors] }, status: exception.status
+    end
 
     def force_utf8_encoding(json)
       if json['data'].class == Array

@@ -24,12 +24,13 @@ module ForestLiana
           end
         end
       rescue ForestLiana::Errors::ExpectedError => exception
-        error_data = JSONAPI::Serializer.serialize_errors([{
+        error_data = ForestAdmin::JSONAPI::Serializer.serialize_errors([{
           status: exception.error_code,
           detail: exception.message
         }])
         render(serializer: nil, json: error_data, status: exception.status)
       rescue => exception
+        FOREST_REPORTER.report exception
         FOREST_LOGGER.error(exception)
         FOREST_LOGGER.error(exception.backtrace.join("\n"))
         render(serializer: nil, json: nil, status: :internal_server_error)

@@ -53,7 +53,7 @@ module ForestLiana
 
     def serializer_for(active_record_class)
       serializer = Class.new {
-        include JSONAPI::Serializer
+        include ForestAdmin::JSONAPI::Serializer
 
         def self_link
           "/forest#{super.underscore}"
@@ -265,8 +265,6 @@ module ForestLiana
 
         SchemaUtils.associations(active_record_class).each do |a|
           begin
-            if SchemaUtils.model_included?(a.klass)
-              serializer.send(serializer_association(a), a.name) {
                 if [:has_one, :belongs_to].include?(a.macro)
                   begin
                     object.send(a.name)
@@ -410,7 +408,10 @@ module ForestLiana
 
     def foreign_keys(active_record_class)
       begin
-        SchemaUtils.associations(active_record_class).map(&:foreign_key)
+        SchemaUtils.belongs_to_associations(active_record_class).map(&:foreign_key)
+        SchemaUtils.belongs_to_associations(active_record_class)
+                   .select { |association| !SchemaUtils.polymorphic?(association) }
+                   .map(&:foreign_key)
       rescue => err
         # Association foreign_key triggers an error. Put the stacktrace and
         # returns no foreign keys.

@@ -35,6 +35,7 @@ module ForestLiana
       'relationship',
       'widget',
       'validations',
+      'polymorphic_referenced_models',
     ]
     KEYS_VALIDATION = [
       'message',
@@ -51,6 +52,8 @@ module ForestLiana
       'download',
       'fields',
       'hooks',
+      'description',
+      'submit_button_label',
     ]
     KEYS_ACTION_FIELD = [
       'field',
@@ -63,6 +66,7 @@ module ForestLiana
       'description',
       'position',
       'widget',
+      'hook',
     ]
     KEYS_SEGMENT = ['name']
 
@@ -96,6 +100,14 @@ module ForestLiana
         end
 
         collection['actions'] = collection['actions'].map do |action|
+          begin
+            SmartActionFieldValidator.validate_smart_action_fields(action['fields'], action['name'], action['hooks']['change'])
+          rescue ForestLiana::Errors::SmartActionInvalidFieldError => invalid_field_error
+            FOREST_LOGGER.warn invalid_field_error.message
+          rescue ForestLiana::Errors::SmartActionInvalidFieldHookError => invalid_hook_error
+            FOREST_REPORTER.report invalid_hook_error
+            FOREST_LOGGER.error invalid_hook_error.message
+          end
           action['fields'] = action['fields'].map { |field| field.slice(*KEYS_ACTION_FIELD) }
           action.slice(*KEYS_ACTION)
         end

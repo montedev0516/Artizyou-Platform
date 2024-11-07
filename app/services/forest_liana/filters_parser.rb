@@ -1,14 +1,10 @@
 module ForestLiana
   class FiltersParser
-    AGGREGATOR_OPERATOR = %w(and or)
+    AGGREGATOR_OPERATOR = %w(and or).freeze
 
-    def initialize(filters, resource, timezone)
-      begin
-        @filters = JSON.parse(filters)
-      rescue JSON::ParserError
-        raise ForestLiana::Errors::HTTP422Error.new('Invalid filters JSON format')
-      end
-
+    def initialize(filters, resource, timezone, params = nil)
+      @filters = filters
+      @params = params
       @resource = resource
       @operator_date_parser = OperatorDateIntervalParser.new(timezone)
       @joins = []
@@ -17,18 +13,13 @@ module ForestLiana
     def apply_filters
       return @resource unless @filters
 
-      where = parse_aggregation(@filters)
-      return @resource unless where
+      where_clause = parse_aggregation(@filters)
+      return @resource unless where_clause
 
       @joins.each do |join|
-        current_resource = @resource.reflect_on_association(join.name).klass
-        current_resource.include(ArelHelpers::Aliases)
-        current_resource.aliased_as(join.name) do |aliased_resource|
-          @resource = @resource.joins(ArelHelpers.join_association(@resource, join.name, Arel::Nodes::OuterJoin, aliases: [aliased_resource]))
-        end
       end
 
-      @resource.where(where)
+      @resource.where(where_clause)
     end
 
     def parse_aggregation(node)
@@ -109,14 +100,7 @@ module ForestLiana
       parsed_value = parse_value(operator, value)
       field_and_operator = "#{parsed_field} #{parsed_operator}"
 
-      if Rails::VERSION::MAJOR < 5
-        "#{field_and_operator} #{ActiveRecord::Base.sanitize(parsed_value)}"
-      # NOTICE: sanitize method as been removed in Rails 5.1 and sanitize_sql introduced in Rails 5.2.
-      elsif Rails::VERSION::MAJOR == 5 && Rails::VERSION::MINOR == 1
-        "#{field_and_operator} #{ActiveRecord::Base.connection.quote(parsed_value)}"
-      else
-        ActiveRecord::Base.sanitize_sql(["#{field_and_operator} ?", parsed_value])
-      end
+      sanitize_condition(field_and_operator, operator, parsed_value)
     end
 
     def parse_aggregation_operator(aggregator_operator)
@@ -147,6 +131,8 @@ module ForestLiana
         'IS'
       when 'present'
         'IS NOT'
+      when 'in'
+        'IN'
       else
         raise_unknown_operator_error(operator)
       end
@@ -162,6 +148,12 @@ module ForestLiana
         "#{value}%"
       when 'ends_with'
         "%#{value}"
+      when 'in'
+        if value.kind_of?(String)
+          value.split(',').map { |val| val.strip() }
+        else
+          value
+        end
       when 'present', 'blank'
       else
         raise_unknown_operator_error(operator)
@@ -172,15 +164,13 @@ module ForestLiana
       if is_belongs_to(field)
         current_resource = @resource.reflect_on_association(field.split(':').first.to_sym)&.klass
         raise ForestLiana::Errors::HTTP422Error.new("Field '#{field}' not found") unless current_resource
-
-        association = get_association_name_for_condition(field)
-        quoted_table_name = ActiveRecord::Base.connection.quote_column_name(association)
         field_name = field.split(':')[1]
       else
         quoted_table_name = @resource.quoted_table_name
         current_resource = @resource
         field_name = field
       end
+
       quoted_field_name = ActiveRecord::Base.connection.quote_column_name(field_name)
 
       column_found = current_resource.columns.find { |column| column.name == field.split(':').last }
@@ -195,7 +185,7 @@ module ForestLiana
       field.include?(':')
     end
 
-    def get_association_name_for_condition(field)
+    def get_association_for_condition(field)
       field, subfield = field.split(':')
 
       association = @resource.reflect_on_association(field.to_sym)
@@ -203,7 +193,7 @@ module ForestLiana
 
       @joins << association unless @joins.include? association
 
-      association.name
+      association
     end
 
     # NOTICE: Look for a previous interval condition matching the following:
@@ -290,6 +280,27 @@ module ForestLiana
       raise ForestLiana::Errors::HTTP422Error.new('Condition cannot be a raw value') unless condition.is_a?(Hash)
       unless condition['field'].is_a?(String) and condition['operator'].is_a?(String)
         raise ForestLiana::Errors::HTTP422Error.new('Invalid condition format')
+      end
+    end
+
+    private
+
+    def prepare_value_for_operator(operator, value)
+      # parenthesis around the parsed_value are required to make the `IN` operator work
+      operator == 'in' ? "(#{value})" : value
+    end
+
+    def sanitize_condition(field_and_operator, operator, parsed_value)
+      if Rails::VERSION::MAJOR < 5
+        condition_value = prepare_value_for_operator(operator, ActiveRecord::Base.sanitize(parsed_value))
+        "#{field_and_operator} #{condition_value}"
+        # NOTICE: sanitize method as been removed in Rails 5.1 and sanitize_sql introduced in Rails 5.2.
+      elsif Rails::VERSION::MAJOR == 5 && Rails::VERSION::MINOR == 1
+        condition_value = prepare_value_for_operator(operator, ActiveRecord::Base.connection.quote(parsed_value))
+        "#{field_and_operator} #{condition_value}"
+      else
+        condition_value = prepare_value_for_operator(operator, '?')
+        ActiveRecord::Base.sanitize_sql(["#{field_and_operator} #{condition_value}", parsed_value])
       end
     end
   end
