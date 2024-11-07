@@ -27,7 +27,6 @@ module ForestLiana
     private
 
     def aggregate(value)
-      aggregator = @params[:aggregator].downcase
       uniq = aggregator == 'count'
 
       if Rails::VERSION::MAJOR >= 4

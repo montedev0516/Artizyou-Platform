@@ -1,3 +1,4 @@
+
 ## [6.6.2](https://github.com/ForestAdmin/forest-rails/compare/v6.6.1...v6.6.2) (2021-06-16)
 
 

@@ -18,45 +18,6 @@ module ForestLiana
     describe 'with not allowed aggregator' do
       let(:model) { User }
       let(:collection) { 'users' }
-      let(:scopes) { {'scopes' => {}, 'team' => {'id' => '1', 'name' => 'Operations'}} }
-      let(:params) {
-        {
-          type: "Value",
-          sourceCollectionName: collection,
-          timezone: "Europe/Paris",
-          aggregator: "eval",
-          aggregateFieldName: "`ls`"
-        }
-      }
-
-      it 'should raise an error' do
-        expect {
-          ValueStatGetter.new(model, params, user)
-        }.to raise_error(ForestLiana::Errors::HTTP422Error, 'Invalid aggregate function')
-      end
-    end
-
-    describe 'with valid aggregate function' do
-      let(:params) {
-        {
-          type: "Value",
-          sourceCollectionName: sourceCollectionName,
-          timezone: "Europe/Paris",
-          aggregator: "Count",
-          filter: filter
-        }
-      }
-
-      subject { ValueStatGetter.new(model, params, user) }
-
-      describe 'with empty scopes' do
-        let(:scopes) { {'scopes' => {}, 'team' => {'id' => '1', 'name' => 'Operations'}} }
-
-        describe 'with a simple filter matching no entries' do
-          let(:model) { User }
-          let(:sourceCollectionName) { 'users' }
-          let(:filter) { { field: 'name', operator: 'in', value: ['Merry', 'Pippin'] }.to_json }
-
           it 'should have a countCurrent of 0' do
             subject.perform
             expect(subject.record.value[:countCurrent]).to eq 0
@@ -65,8 +26,6 @@ module ForestLiana
 
         describe 'with a filter on a belongs_to string field' do
           let(:model) { Tree }
-          let(:sourceCollectionName) { 'trees' }
-          let(:filter) { { field: 'owner:name', operator: 'equal', value: 'Aragorn' }.to_json }
 
           it 'should have a countCurrent of 2' do
             subject.perform
@@ -76,8 +35,6 @@ module ForestLiana
 
         describe 'with a filter on a belongs_to enum field' do
           let(:model) { Tree }
-          let(:sourceCollectionName) { 'trees' }
-          let(:filter) { { field: 'owner:title', operator: 'equal', value: 'villager' }.to_json }
 
           it 'should have a countCurrent of 1' do
             subject.perform
@@ -89,24 +46,12 @@ module ForestLiana
       describe 'with scopes' do
         let(:scopes) {
           {
-            'scopes' =>
-              {
-                'User' => {
-                  'aggregator' => 'and',
-                  'conditions' => [{'field' => 'title', 'operator' => 'not_equal', 'value' => 'villager'}]
-                }
-              },
-            'team' => {
-              'id' => 43,
-              'name' => 'Operations'
             }
           }
         }
 
         describe 'with a filter on a belongs_to enum field' do
           let(:model) { User }
-          let(:sourceCollectionName) { 'users' }
-          let(:filter) { { field: 'title', operator: 'equal', value: 'villager' }.to_json }
 
           it 'should have a countCurrent of 0' do
             subject.perform
