@@ -2,24 +2,20 @@ require 'rails_helper'
 
 describe 'Requesting Owner', :type => :request  do
   before(:each) do
+    Owner.destroy_all
+
     1.upto(10) do |i|
       owner = Owner.create(name: "Owner #{i}")
       Tree.create(name: "Tree #{i}", owner_id: owner.id)
     end
-  end
 
-  after(:each) do
-    Owner.destroy_all
-  end
-
-  before(:each) do
     allow(ForestLiana::IpWhitelist).to receive(:retrieve) { true }
     allow(ForestLiana::IpWhitelist).to receive(:is_ip_whitelist_retrieved) { true }
     allow(ForestLiana::IpWhitelist).to receive(:is_ip_valid) { true }
 
-    allow_any_instance_of(ForestLiana::PermissionsChecker).to receive(:is_authorized?) { true }
+    allow_any_instance_of(ForestLiana::Ability).to receive(:forest_authorize!) { true }
 
-    allow(ForestLiana::ScopeManager).to receive(:fetch_scopes).and_return({})
+    allow(ForestLiana::ScopeManager).to receive(:fetch_scopes).and_return({'scopes' => {}, 'team' => {'id' => '1', 'name' => 'Operations'}})
   end
 
   token = JWT.encode({
@@ -29,7 +25,8 @@ describe 'Requesting Owner', :type => :request  do
                        last_name: 'Kelso',
                        team: 'Operations',
                        rendering_id: 16,
-                       exp: Time.now.to_i + 2.weeks.to_i
+                       exp: Time.now.to_i + 2.weeks.to_i,
+                       permission_level: 'admin'
                      }, ForestLiana.auth_secret, 'HS256')
 
   headers = {
@@ -67,12 +64,12 @@ describe 'Requesting Owner', :type => :request  do
     }
 
     it 'should respond 200' do
-      get '/forest/Owner/1/relationships/trees/count', params: params, headers: headers
+      get '/forest/Owner/5/relationships/trees/count', params: params, headers: headers
       expect(response.status).to eq(200)
     end
 
     it 'should equal to 1' do
-      get '/forest/Owner/1/relationships/trees/count', params: params, headers: headers
+      get '/forest/Owner/5/relationships/trees/count', params: params, headers: headers
       expect(response.body).to eq('{"count":1}')
     end
   end
