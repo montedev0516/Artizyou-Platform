@@ -1,16 +1,6 @@
 module ForestLiana
   module QueryHelper
     def self.get_one_associations(resource)
-      associations = SchemaUtils.one_associations(resource)
-        .select do |association|
-          if SchemaUtils.polymorphic?(association)
-            SchemaUtils.polymorphic_models(association).all? { |model| SchemaUtils.model_included?(model) }
-          else
-            SchemaUtils.model_included?(association.klass)
-          end
-        end
-
-      associations
     end
 
     def self.get_one_association_names_symbol(resource)

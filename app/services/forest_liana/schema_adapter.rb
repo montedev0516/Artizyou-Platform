@@ -105,7 +105,7 @@ module ForestLiana
         end
       end
 
-      # NOTICE: Add Intercom fields
+      
       if ForestLiana.integrations.try(:[], :intercom)
         .try(:[], :mapping).try(:include?, @model.name)
 
@@ -265,7 +265,6 @@ module ForestLiana
               field[:field] == association.foreign_key || field[:field] == association.foreign_type
             end
           # NOTICE: Delete the association if the targeted model is excluded.
-          elsif !SchemaUtils.model_included?(association.klass)
             field = collection.fields.find do |x|
               x[:field] == association.foreign_key
             end
@@ -298,25 +297,19 @@ module ForestLiana
         automatic_inverse_of(association)
     end
 
-    def get_polymorphic_types(relation)
-      types = []
-      ForestLiana.models.each do |model|
-        unless model.reflect_on_all_associations.select { |association| association.options[:as] == relation.name.to_sym }.empty?
-          types << model.name
-        end
-      end
-
-      types
     end
 
     def automatic_inverse_of(association)
-      name = association.active_record.name.demodulize.underscore
+      if SchemaUtils.polymorphic?(association)
+        polymorphic_inverse_of(association)
+      else
+        name = association.active_record.name.demodulize.underscore
+        inverse_association = association.klass.reflections.keys.find do |k|
+          k.to_s == name || k.to_s == name.pluralize
+        end
 
-      inverse_association = association.klass.reflections.keys.find do |k|
-        k.to_s == name || k.to_s == name.pluralize
+        inverse_association.try(:to_s)
       end
-
-      inverse_association.try(:to_s)
     end
 
     def get_schema_for_column(column)
@@ -350,7 +343,7 @@ module ForestLiana
         field: association.name.to_s,
         type: get_type_for_association(association),
         relationship: get_relationship_type(association),
-        reference: "#{ForestLiana.name_for(association.klass)}.id",
+        reference: "#{ForestLiana.name_for(SchemaUtils.association_ref(association))}.id",
         inverse_of: inverse_of(association),
         is_filterable: !is_many_association(association),
         is_sortable: true,
@@ -539,7 +532,7 @@ module ForestLiana
     end
 
     def get_reference_for(association)
-      if association.options[:polymorphic] == true
+      if SchemaUtils.polymorphic?(association)
         '*.id'
       else
         "#{ForestLiana.name_for(association.klass)}.id"

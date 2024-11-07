@@ -57,18 +57,13 @@ module ForestLiana
             #if data.blank?
               #@attributes[name] = nil
             #else
-              #@attributes[name] = association.klass.find(data[:id])
+              #@attributes[name] = SchemaUtils.association_ref(association).find(data[:id])
             #end
 
             # ActionController::Parameters do not inherit from Hash anymore
             # since Rails 5.
             if (data.is_a?(Hash) || data.is_a?(ActionController::Parameters)) && data[:id]
-              if (SchemaUtils.polymorphic?(association))
-                @attributes[association.foreign_key] = data[:id]
-                @attributes[association.foreign_type] = data[:type]
-              else
-                @attributes[name] = association.klass.find(data[:id])
-              end
+
             elsif data.blank?
               @attributes[name] = nil
             end
