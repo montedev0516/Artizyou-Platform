@@ -17,7 +17,6 @@ module ForestLiana
       return @resource unless where_clause
 
       @joins.each do |join|
-        @resource = @resource.eager_load(join.name)
       end
 
       @resource.where(where_clause)
@@ -165,15 +164,13 @@ module ForestLiana
       if is_belongs_to(field)
         current_resource = @resource.reflect_on_association(field.split(':').first.to_sym)&.klass
         raise ForestLiana::Errors::HTTP422Error.new("Field '#{field}' not found") unless current_resource
-
-        get_association_name_for_condition(field)
-        quoted_table_name = current_resource.table_name
         field_name = field.split(':')[1]
       else
         quoted_table_name = @resource.quoted_table_name
         current_resource = @resource
         field_name = field
       end
+
       quoted_field_name = ActiveRecord::Base.connection.quote_column_name(field_name)
 
       column_found = current_resource.columns.find { |column| column.name == field.split(':').last }
@@ -188,7 +185,7 @@ module ForestLiana
       field.include?(':')
     end
 
-    def get_association_name_for_condition(field)
+    def get_association_for_condition(field)
       field, subfield = field.split(':')
 
       association = @resource.reflect_on_association(field.to_sym)
@@ -196,7 +193,7 @@ module ForestLiana
 
       @joins << association unless @joins.include? association
 
-      association.name
+      association
     end
 
     # NOTICE: Look for a previous interval condition matching the following:
