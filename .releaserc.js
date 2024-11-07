@@ -1,12 +1,11 @@
 module.exports = {
-  branches: ['main', '+([0-9])?(.{+([0-9]),x}).x', {name: 'beta', prerelease: true}],
   plugins: [
     [
       '@semantic-release/commit-analyzer', {
         preset: 'angular',
         releaseRules: [
           // Example: `type(scope): subject [force release]`
-          { subject: '*[force release]*', release: 'patch' },
+          { subject: '*\\[force release\\]*', release: 'patch' },
         ],
       },
     ],

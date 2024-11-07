@@ -6,7 +6,7 @@ module ForestLiana
     let(:sort) { 'id' }
     let(:fields) {}
     let(:filters) {}
-    let(:scopes) { {} }
+    let(:scopes) { {'scopes' => {}, 'team' => {'id' => '1', 'name' => 'Operations'}} }
     let(:rendering_id) { 13 }
     let(:user) { { 'id' => '1', 'rendering_id' => rendering_id } }
 
@@ -248,6 +248,31 @@ module ForestLiana
       end
     end
 
+    context 'when fields is given' do
+      let(:resource) { Island }
+      let(:filters) { {
+        field: 'location:id',
+        operator: 'equal',
+        value: 1,
+      }.to_json }
+
+      it 'should get only the expected records' do
+        getter.perform
+        records = getter.records
+        count = getter.count
+
+        expect(records.count).to eq 1
+        expect(count).to eq 1
+        expect(records.map(&:id)).to eq [1]
+      end
+
+      it 'should include associated table only once' do
+        sql_query = getter.perform.to_sql
+        location_includes_count = sql_query.scan('LEFT OUTER JOIN "locations"').count
+        expect(location_includes_count).to eq(1)
+      end
+    end
+
     describe 'when getting instance dependent associations' do
       let(:resource) { Island }
       let(:fields) { { 'Island' => 'id,eponymous_tree', 'eponymous_tree' => 'id,name'} }
@@ -480,16 +505,16 @@ module ForestLiana
       let(:filters) { }
       let(:scopes) {
         {
-          'Island' => {
-            'scope'=> {
-              'filter'=> {
+          'scopes' =>
+            {
+              'Island' => {
                 'aggregator' => 'and',
-                'conditions' => [
-                  { 'field' => 'name', 'operator' => 'contains', 'value' => 'u' }
-                ]
-              },
-              'dynamicScopesValues' => { }
-            }
+                'conditions' => [{'field' => 'name', 'operator' => 'contains', 'value' => 'u'}]
+              }
+            },
+          'team' => {
+            'id' => 43,
+            'name' => 'Operations'
           }
         }
       }

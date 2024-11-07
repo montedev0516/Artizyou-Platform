@@ -12,7 +12,6 @@ module ForestLiana
     end
 
     def validate_params
-      if @params.key?(:aggregate) && !%w[count sum avg max min].include?(@params[:aggregate].downcase)
         raise ForestLiana::Errors::HTTP422Error.new('Invalid aggregate function')
       end
     end
@@ -21,6 +20,5 @@ module ForestLiana
       super
       @resource.reorder('')
     end
-
   end
 end
