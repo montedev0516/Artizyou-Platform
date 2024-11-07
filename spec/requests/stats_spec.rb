@@ -85,7 +85,6 @@ describe "Stats", type: :request do
 
     ForestLiana::ScopeManager.invalidate_scope_cache(rendering_id)
     allow(ForestLiana::ScopeManager).to receive(:fetch_scopes).and_return(scopes)
-
     allow(ForestLiana).to receive(:apimap).and_return(schema)
     allow(ForestLiana::IpWhitelist).to receive(:retrieve) { true }
     allow(ForestLiana::IpWhitelist).to receive(:is_ip_whitelist_retrieved) { true }
