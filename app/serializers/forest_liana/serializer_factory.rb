@@ -6,6 +6,10 @@ module ForestLiana
     def self.define_serializer(active_record_class, serializer)
       serializer_name = self.build_serializer_name(active_record_class)
 
+      if ForestLiana::UserSpace.const_defined?(serializer_name, false)
+        ForestLiana::UserSpace.send(:remove_const, serializer_name)
+      end
+
       # NOTICE: Create the serializer in the UserSpace to avoid conflicts with
       # serializer created from integrations, actions, segments, etc.
       ForestLiana::UserSpace.const_set(serializer_name, serializer)
@@ -35,12 +39,6 @@ module ForestLiana
         "ForestLiana::StripeBankAccountSerializer"
       elsif active_record_class == ForestLiana::Model::Stat
         "ForestLiana::StatSerializer"
-      elsif active_record_class == ForestLiana::Model::Collection
-        "ForestLiana::CollectionSerializer"
-      elsif active_record_class == ForestLiana::Model::Action
-        "ForestLiana::ActionSerializer"
-      elsif active_record_class == ForestLiana::Model::Segment
-        "ForestLiana::SegmentSerializer"
       elsif active_record_class == ForestLiana::MixpanelEvent
         "ForestLiana::MixpanelEventSerializer"
       else
@@ -55,7 +53,7 @@ module ForestLiana
 
     def serializer_for(active_record_class)
       serializer = Class.new {
-        include JSONAPI::Serializer
+        include ForestAdmin::JSONAPI::Serializer
 
         def self_link
           "/forest#{super.underscore}"
@@ -179,17 +177,27 @@ module ForestLiana
 
       unless @is_smart_collection
         attributes(active_record_class).each do |attribute|
-          serializer.attribute(attribute)
+          serializer.attribute(attribute) do |x|
+            begin
+              object.send(attribute)
+            rescue
+              nil
+            end
+          end
         end
 
         # NOTICE: Format time type fields during the serialization.
         attributes_time(active_record_class).each do |attribute|
           serializer.attribute(attribute) do |x|
-            value = object.send(attribute)
-            if value
-              match = /(\d{2}:\d{2}:\d{2})/.match(value.to_s)
-              (match && match[1]) ? match[1] : nil
-            else
+            begin
+              value = object.send(attribute)
+              if value
+                match = /(\d{2}:\d{2}:\d{2})/.match(value.to_s)
+                (match && match[1]) ? match[1] : nil
+              else
+                nil
+              end
+            rescue
               nil
             end
           end
@@ -198,22 +206,38 @@ module ForestLiana
         # NOTICE: Format serialized fields.
         attributes_serialized(active_record_class).each do |attr, serialization|
           serializer.attribute(attr) do |x|
-            value = object.send(attr)
-            value ? value.to_json : nil
+            begin
+              value = object.send(attr)
+              value ? value.to_json : nil
+            rescue
+              nil
+            end
           end
         end
 
         # NOTICE: Format CarrierWave url attribute
         if active_record_class.respond_to?(:mount_uploader)
           active_record_class.uploaders.each do |key, value|
-            serializer.attribute(key) { |x| object.send(key).try(:url) }
+            serializer.attribute(key) do |x|
+              begin
+                object.send(key).try(:url)
+              rescue
+                nil
+              end
+            end
           end
         end
 
         # NOTICE: Format Paperclip url attribute
         if active_record_class.respond_to?(:attachment_definitions)
           active_record_class.attachment_definitions.each do |key, value|
-            serializer.attribute(key) { |x| object.send(key) }
+            serializer.attribute(key) do |x|
+              begin
+                object.send(key)
+              rescue
+                nil
+              end
+            end
           end
         end
 
@@ -223,7 +247,11 @@ module ForestLiana
           active_record_class.acts_as_taggable.respond_to?(:to_a)
           active_record_class.acts_as_taggable.to_a.each do |key, value|
             serializer.attribute(key) do |x|
-              object.send(key).map(&:name)
+              begin
+                object.send(key).map(&:name)
+              rescue
+                nil
+              end
             end
           end
         end
@@ -237,11 +265,6 @@ module ForestLiana
 
         SchemaUtils.associations(active_record_class).each do |a|
           begin
-            if SchemaUtils.model_included?(a.klass)
-              @association = serializer_association(a)
-              @include_data = @association === :has_one ? true : false
-              @include_links = @association === :has_one ? false : true
-              serializer.send(@association, a.name, include_data: @include_data, include_links: @include_links) {
                 if [:has_one, :belongs_to].include?(a.macro)
                   begin
                     object.send(a.name)
@@ -280,8 +303,7 @@ module ForestLiana
         serializer.send(:has_many, :mixpanel_last_events) { }
       end
 
-      ForestLiana::SerializerFactory.define_serializer(active_record_class,
-                                                       serializer)
+      ForestLiana::SerializerFactory.define_serializer(active_record_class, serializer)
 
       serializer
     end
@@ -386,7 +408,10 @@ module ForestLiana
 
     def foreign_keys(active_record_class)
       begin
-        SchemaUtils.associations(active_record_class).map(&:foreign_key)
+        SchemaUtils.belongs_to_associations(active_record_class).map(&:foreign_key)
+        SchemaUtils.belongs_to_associations(active_record_class)
+                   .select { |association| !SchemaUtils.polymorphic?(association) }
+                   .map(&:foreign_key)
       rescue => err
         # Association foreign_key triggers an error. Put the stacktrace and
         # returns no foreign keys.

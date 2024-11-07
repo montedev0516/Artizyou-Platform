@@ -13,13 +13,42 @@ module ForestLiana
       end
     end
 
-    class ExpectedError < StandardError
-      attr_reader :error_code, :status, :message
+    class SmartActionInvalidFieldError < StandardError
+      def initialize(action_name=nil, field_name=nil, message=nil)
+        error_message = ""
+        error_message << "Error while parsing action \"#{action_name}\"" if !action_name.nil?
+        error_message << " on field \"#{field_name}\"" if !field_name.nil?
+        error_message << ": " if !field_name.nil? || !action_name.nil?
+        error_message << message if !message.nil?
+        super(error_message)
+      end
+    end
 
-      def initialize(error_code, status, message)
+    class SmartActionInvalidFieldHookError < StandardError
+      def initialize(action_name=nil, field_name=nil, hook_name=nil)
+        super("The hook \"#{hook_name}\" of \"#{field_name}\" field on the smart action \"#{action_name}\" is not defined.")
+      end
+    end
+
+    class AuthenticationOpenIdClientException < StandardError
+      attr_reader :error, :error_description, :state
+
+      def initialize(error, error_description, state)
+        super(error_description)
+        @error = error
+        @error_description = error_description
+        @state = state
+      end
+    end
+
+    class ExpectedError < StandardError
+      attr_reader :error_code, :status, :message, :name
+
+      def initialize(error_code, status, message, name = nil)
         @error_code = error_code
         @status = status
         @message = message
+        @name = name
       end
 
       def display_error
@@ -39,9 +68,33 @@ module ForestLiana
       end
     end
 
-    class HTTP404Error < ExpectedError
-      def initialize(message = "Not Found")
-        super(404, :not_found, message)
+    class HTTP422Error < ExpectedError
+      def initialize(message = "Unprocessable Entity")
+        super(422, :unprocessable_entity, message)
+      end
+    end
+
+    class NotImplementedMethodError < ExpectedError
+      def initialize(message = "Method not implemented")
+        super(501, :internal_server_error, message, 'MethodNotImplementedError')
+      end
+    end
+
+    class InconsistentSecretAndRenderingError < ExpectedError
+      def initialize(message=ForestLiana::MESSAGES[:SERVER_TRANSACTION][:SECRET_AND_RENDERINGID_INCONSISTENT])
+        super(500, :internal_server_error, message, 'InconsistentSecretAndRenderingError')
+      end
+    end
+
+    class SecretNotFoundError < ExpectedError
+      def initialize(message=ForestLiana::MESSAGES[:SERVER_TRANSACTION][:SECRET_NOT_FOUND])
+        super(500, :internal_server_error, message, 'SecretNotFoundError')
+      end
+    end
+
+    class TwoFactorAuthenticationRequiredError < ExpectedError
+      def initialize(message='Two factor authentication required')
+        super(403, :forbidden, message, 'TwoFactorAuthenticationRequiredError')
       end
     end
 

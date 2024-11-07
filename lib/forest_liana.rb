@@ -16,6 +16,8 @@ module ForestLiana
 
   mattr_accessor :env_secret
   mattr_accessor :auth_secret
+  mattr_accessor :forest_client_id
+  mattr_accessor :application_url
   mattr_accessor :integrations
   mattr_accessor :apimap
   mattr_accessor :allowed_users
@@ -24,6 +26,9 @@ module ForestLiana
   mattr_accessor :included_models
   mattr_accessor :user_class_name
   mattr_accessor :names_overriden
+  mattr_accessor :meta
+  mattr_accessor :logger
+  mattr_accessor :reporter
   # TODO: Remove once lianas prior to 2.0.0 are not supported anymore.
   mattr_accessor :names_old_overriden
 
@@ -34,9 +39,22 @@ module ForestLiana
   self.included_models = []
   self.user_class_name = nil
   self.names_overriden = {}
+  self.meta = {}
+  self.logger = nil
+  self.reporter = nil
+
+  @config_dir = 'lib/forest_liana/**/*.rb'
 
   # TODO: Remove once lianas prior to 2.0.0 are not supported anymore.
   self.names_old_overriden = {}
+
+  def self.config_dir=(config_dir)
+    @config_dir = config_dir
+  end
+
+  def self.config_dir
+    Rails.root.join(@config_dir)
+  end
 
   def self.schema_for_resource resource
     self.apimap.find do |collection|

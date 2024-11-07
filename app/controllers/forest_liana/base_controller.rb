@@ -4,6 +4,10 @@ module ForestLiana
     wrap_parameters false
     before_action :reject_unauthorized_ip
 
+    def route_not_found
+      head :not_found
+    end
+
     private
 
     def reject_unauthorized_ip
@@ -20,13 +24,13 @@ module ForestLiana
           end
         end
       rescue ForestLiana::Errors::ExpectedError => exception
-        exception.display_error
-        error_data = JSONAPI::Serializer.serialize_errors([{
+        error_data = ForestAdmin::JSONAPI::Serializer.serialize_errors([{
           status: exception.error_code,
           detail: exception.message
         }])
         render(serializer: nil, json: error_data, status: exception.status)
       rescue => exception
+        FOREST_REPORTER.report exception
         FOREST_LOGGER.error(exception)
         FOREST_LOGGER.error(exception.backtrace.join("\n"))
         render(serializer: nil, json: nil, status: :internal_server_error)

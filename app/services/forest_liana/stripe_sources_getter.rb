@@ -32,7 +32,7 @@ module ForestLiana
 
     def fetch_bank_accounts(customer, params)
       begin
-        @cards = ::Stripe::Customer.retrieve(customer).sources.all(params)
+        @cards = ::Stripe::Customer.retrieve({ id: customer, expand: ['sources'] }).sources.list(params)
         if @cards.blank?
           @records = []
           return
@@ -46,6 +46,7 @@ module ForestLiana
           d
         end
       rescue ::Stripe::InvalidRequestError => error
+        FOREST_REPORTER.report error
         FOREST_LOGGER.error "Stripe error: #{error.message}"
         @records = []
       end

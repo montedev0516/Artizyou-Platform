@@ -4,9 +4,10 @@ ForestLiana::Engine.routes.draw do
   # Onboarding
   get '/' => 'apimaps#index'
 
-  # Session
-  post 'sessions' => 'sessions#create_with_password'
-  post 'sessions-google' => 'sessions#create_with_google'
+  # Authentication
+  post 'authentication' => 'authentication#start_authentication'
+  get 'authentication/callback' => 'authentication#authentication_callback'
+  post 'authentication/logout' => 'authentication#logout'
 
   # Associations
   get ':collection/:id/relationships/:association_name' => 'associations#index'
@@ -18,6 +19,9 @@ ForestLiana::Engine.routes.draw do
   # Stats
   post '/stats/:collection' => 'stats#get'
   post '/stats' => 'stats#get_with_live_query'
+
+  # Scopes
+  post '/scope-cache-invalidation' => 'scopes#invalidate_scope_cache'
 
   # Stripe Integration
   get '(*collection)_stripe_payments' => 'stripe#payments'
@@ -53,7 +57,8 @@ ForestLiana::Engine.routes.draw do
   post ':collection', to: router
   put ':collection/:id', to: router
   delete ':collection/:id', to: router
+  delete ':collection', to: router
 
-  # Smart Actions forms value
-  post 'actions/:action_name/values' => 'actions#values'
+  draw(:actions)
+
 end

@@ -1,9 +1,11 @@
-## Pull Request checklist:
+## Definition of Done
 
-- [ ] Write an explicit title for the Pull Request
-- [ ] Write changes made in the CHANGELOG.md
-- [ ] Create automatic tests
-- [ ] No automatic tests failures
+### General
+
+- [ ] Write an explicit title for the Pull Request, following [Conventional Commits specification](https://www.conventionalcommits.org)
 - [ ] Test manually the implemented changes
-- [ ] Review my own code (indentation, syntax, style, simplicity, readability)
-- [ ] Wonder if you can improve the existing code
+- [ ] Validate the code quality (indentation, syntax, style, simplicity, readability)
+
+### Security
+
+- [ ] Consider the security impact of the changes made

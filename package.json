@@ -1,12 +1,11 @@
 {
   "name": "forest-rails",
-  "version": "0.0.0",
   "description": "The official Rails liana for Forest.",
-  "main": "gulpfile.js",
   "directories": {
     "test": "test"
   },
   "scripts": {
+    "prepare": "husky install",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -14,15 +13,20 @@
     "url": "git+https://github.com/ForestAdmin/forest-rails.git"
   },
   "author": "",
-  "license": "ISC",
+  "license": "GPL-3.0",
   "bugs": {
     "url": "https://github.com/ForestAdmin/forest-rails/issues"
   },
   "homepage": "https://github.com/ForestAdmin/forest-rails#readme",
   "devDependencies": {
-    "gulp": "3.9.1",
-    "moment": "^2.20.1",
-    "semver": "5.3.0",
-    "simple-git": "1.65.0"
+    "@commitlint/cli": "17.4.2",
+    "@commitlint/config-conventional": "17.4.2",
+    "@semantic-release/changelog": "6.0.1",
+    "@semantic-release/exec": "6.0.3",
+    "@semantic-release/git": "10.0.1",
+    "husky": "7.0.0",
+    "semantic-release": "19.0.5",
+    "semantic-release-rubygem": "1.2.0",
+    "semantic-release-slack-bot": "3.5.2"
   }
 }

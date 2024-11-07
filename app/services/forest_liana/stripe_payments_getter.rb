@@ -48,6 +48,7 @@ module ForestLiana
           d
         end
       rescue ::Stripe::InvalidRequestError => error
+        FOREST_REPORTER.report error
         FOREST_LOGGER.error "Stripe error: #{error.message}"
         @records = []
       end
@@ -55,7 +56,7 @@ module ForestLiana
 
     def fetch_charges(params)
       return if @params[:id] && params[:customer].blank?
-      ::Stripe::Charge.all(params)
+      ::Stripe::Charge.list(params)
     end
 
     def starting_after

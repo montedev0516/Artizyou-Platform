@@ -2,17 +2,23 @@ module ForestLiana
   class StatGetter < BaseGetter
     attr_accessor :record
 
-    def initialize(resource, params)
+    def initialize(resource, params, forest_user)
       @resource = resource
       @params = params
+      @user = forest_user
+
+      validate_params
+      compute_includes
     end
 
-    private
+    def validate_params
+        raise ForestLiana::Errors::HTTP422Error.new('Invalid aggregate function')
+      end
+    end
 
-    def includes
-      SchemaUtils.one_associations(@resource)
-        .select { |association| SchemaUtils.model_included?(association.klass) }
-        .map(&:name)
+    def get_resource
+      super
+      @resource.reorder('')
     end
   end
 end

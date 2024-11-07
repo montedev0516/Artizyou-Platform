@@ -13,23 +13,27 @@ gemspec
 # To use a debugger
 group :development, :test do
   gem 'byebug'
-  gem 'rspec'
+  gem 'rspec-rails'
+  gem "timecop"
 end
 
 group :test do
   gem 'rake'
-  gem 'sqlite3'
+  gem 'sqlite3', '~> 1.4'
+  gem 'simplecov', '~> 0.17.0', require: false
 end
 
-gem 'rails', '4.2.7.1'
-gem 'jsonapi-serializers', '0.14.0'
+gem 'rails', '6.1.7.9'
+gem 'forestadmin-jsonapi-serializers'
 gem 'rack-cors'
-gem 'arel-helpers'
-gem 'groupdate'
+gem 'arel-helpers', '2.14.0'
+gem 'groupdate', '5.2.2'
 gem 'useragent'
 gem 'jwt'
 gem 'bcrypt'
-gem 'base32', '0.3.2'
-gem 'rotp', '3.1'
-gem 'httparty', '0.13.7'
+gem 'httparty', '0.21.0'
 gem 'ipaddress', '0.8.3'
+gem 'openid_connect', '1.4.2'
+gem 'json'
+gem 'json-jwt', '>= 1.16'
+gem 'deepsort'

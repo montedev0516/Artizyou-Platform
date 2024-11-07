@@ -2,16 +2,15 @@ module ForestLiana
   class LineStatGetter < StatGetter
     attr_accessor :record
 
-    def initialize(resource, params)
-      super(resource, params)
-    end
-
     def client_timezone
+      # As stated here https://github.com/ankane/groupdate#for-sqlite
+      # groupdate does not handle timezone for SQLite
+      return false if 'SQLite' == ActiveRecord::Base.connection.adapter_name
       @params[:timezone]
     end
 
     def get_format
-      case @params[:time_range].try(:downcase)
+      case @params[:timeRange].try(:downcase)
         when 'day'
           '%d/%m/%Y'
         when 'week'
@@ -24,27 +23,19 @@ module ForestLiana
     end
 
     def perform
-      value = get_resource().eager_load(includes)
+      value = get_resource()
 
-      if @params[:filterType] && @params[:filters]
-        conditions = []
-        filter_operator = " #{@params[:filterType]} ".upcase
+      filters = ForestLiana::ScopeManager.append_scope_for_user(@params[:filter], @user, @resource.name, @params['contextVariables'])
 
-        @params[:filters].try(:each) do |filter|
-          operator, filter_value = OperatorValueParser.parse(filter[:value])
-          conditions << OperatorValueParser.get_condition(filter[:field],
-            operator, filter_value, @resource, @params[:timezone])
-        end
-
-        value = value.where(conditions.join(filter_operator))
+      unless filters.blank?
+        value = FiltersParser.new(filters, @resource, @params[:timezone], @params).apply_filters
       end
 
-      value = value.send(time_range, group_by_date_field, {
-        time_zone: client_timezone,
-        week_start: :mon
-      })
+      Groupdate.week_start = :monday
 
-      value = value.send(@params[:aggregate].downcase, @params[:aggregate_field])
+      value = value.send(timeRange, group_by_date_field, time_zone: client_timezone)
+
+      value = value.send(@params[:aggregator].downcase, @params[:aggregateFieldName])
         .map do |k, v|
           { label: k.strftime(get_format), values: { value: v }}
         end
@@ -55,11 +46,11 @@ module ForestLiana
     private
 
     def group_by_date_field
-      "#{@resource.table_name}.#{@params[:group_by_date_field]}"
+      "#{@resource.table_name}.#{@params[:groupByFieldName]}"
     end
 
-    def time_range
-      "group_by_#{@params[:time_range].try(:downcase) || 'month'}"
+    def timeRange
+      "group_by_#{@params[:timeRange].try(:downcase) || 'month'}"
     end
 
   end

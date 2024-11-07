@@ -3,20 +3,23 @@ module ForestLiana
     attr_accessor :record
     attr_accessor :errors
 
-    def initialize(resource, params)
+    def initialize(resource, params, forest_user)
       @resource = resource
       @params = params
       @errors = nil
+      @user = forest_user
     end
 
     def perform
       begin
-        @record = @resource.find(@params[:id])
+        collection_name = ForestLiana.name_for(@resource)
+        scoped_records = ForestLiana::ScopeManager.apply_scopes_on_records(@resource, @user, collection_name, @params[:timezone])
+        @record = scoped_records.find(@params[:id])
 
         if has_strong_parameter
-          @record.update_attributes(resource_params)
+          @record.update(resource_params)
         else
-          @record.update_attributes(resource_params, without_protection: true)
+          @record.update(resource_params, without_protection: true)
         end
       rescue ActiveRecord::StatementInvalid => exception
         # NOTICE: SQL request cannot be executed properly
@@ -33,7 +36,7 @@ module ForestLiana
     end
 
     def has_strong_parameter
-      @resource.instance_method(:update_attributes!).arity == 1
+      Rails::VERSION::MAJOR > 5 || @resource.instance_method(:update!).arity == 1
     end
   end
 end

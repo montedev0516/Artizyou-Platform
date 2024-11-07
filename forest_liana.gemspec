@@ -9,24 +9,26 @@ Gem::Specification.new do |s|
   s.version     = ForestLiana::VERSION
   s.authors     = ["Sandro Munda"]
   s.email       = ["sandro@munda.me"]
-  s.homepage    = nil
+  s.homepage    = 'https://github.com/ForestAdmin/forest-rails'
   s.summary     = "Official Rails Liana for Forest"
   s.description = "Forest is a modern admin interface that works on all major web frameworks. forest_liana is the gem that makes Forest admin work on any Rails application (Rails >= 4.0)."
-  s.license     = "GPL v3"
+  s.license     = "GPL-3.0"
 
   s.files = Dir["{app,config,db,lib}/**/*", "LICENSE", "Rakefile", "README.rdoc"]
-  s.test_files = Dir["test/**/*"]
+  s.test_files = Dir["test/**/*", "spec/**/*"]
 
-  s.add_runtime_dependency "rails", ">= 4.0"
-  s.add_runtime_dependency "jsonapi-serializers", ">= 0.14.0"
+  s.add_runtime_dependency "rails", ">= 6.1.7.9"
+  s.add_runtime_dependency "forestadmin-jsonapi-serializers", ">= 0.14.0"
   s.add_runtime_dependency "jwt"
   s.add_runtime_dependency "rack-cors"
   s.add_runtime_dependency "arel-helpers"
-  s.add_runtime_dependency "groupdate"
+  s.add_runtime_dependency "groupdate", ">= 5.0.0"
   s.add_runtime_dependency "useragent"
   s.add_runtime_dependency "bcrypt"
-  s.add_runtime_dependency "rotp"
-  s.add_runtime_dependency "base32"
   s.add_runtime_dependency "httparty"
   s.add_runtime_dependency "ipaddress"
+  s.add_runtime_dependency "json"
+  s.add_runtime_dependency "json-jwt", ">= 1.16.0"
+  s.add_runtime_dependency "openid_connect", "1.4.2"
+  s.add_runtime_dependency "deepsort"
 end

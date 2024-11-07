@@ -3,6 +3,12 @@ require 'csv'
 
 module ForestLiana
   class ApplicationController < ForestLiana::BaseController
+    rescue_from ForestLiana::Ability::Exceptions::AccessDenied, with: :render_error
+    rescue_from ForestLiana::Errors::HTTP403Error, with: :render_error
+    rescue_from ForestLiana::Errors::HTTP422Error, with: :render_error
+    rescue_from ForestLiana::Ability::Exceptions::ActionConditionError, with: :render_error
+    rescue_from ForestLiana::Ability::Exceptions::UnknownCollection, with: :render_error
+
     def self.papertrail?
       Object.const_get('PaperTrail::Version').is_a?(Class) rescue false
     end
@@ -23,10 +29,11 @@ module ForestLiana
       # NOTICE: The Forest user email is returned to track changes made using
       #         Forest with Papertrail.
       define_method :user_for_paper_trail do
-        forest_user['data']['data']['email']
+        @jwt_decoded_token['email']
       end
     end
 
+    # NOTICE: Helper method for Smart Routes logic based on current user info.
     def forest_user
       @jwt_decoded_token
     end
@@ -58,15 +65,13 @@ module ForestLiana
 
     def serialize_model(record, options = {})
       options[:is_collection] = false
-      json = JSONAPI::Serializer.serialize(record, options)
+      json = ForestAdmin::JSONAPI::Serializer.serialize(record, options)
 
       force_utf8_encoding(json)
     end
 
     def serialize_models(records, options = {}, fields_searched = [])
       options[:is_collection] = true
-      define_belongsTo_id(records)
-      json = JSONAPI::Serializer.serialize(records, options)
 
       if options[:params] && options[:params][:search]
         # NOTICE: Add the Smart Fields with a 'String' type.
@@ -82,16 +87,24 @@ module ForestLiana
 
     def authenticate_user_from_jwt
       begin
-        if request.headers['Authorization'] || params['sessionToken']
+        if request.headers
           if request.headers['Authorization']
             token = request.headers['Authorization'].split.second
-          else
-            token = params['sessionToken']
+          # NOTICE: Necessary for downloads authentication.
+          elsif request.headers['cookie']
+            match = ForestLiana::Token::REGEX_COOKIE_SESSION_TOKEN.match(request.headers['cookie'])
+            token = match[1] if match && match[1]
           end
 
           @jwt_decoded_token = JWT.decode(token, ForestLiana.auth_secret, true,
-            { algorithm: 'HS256', leeway: 30 }).try(:first)
-          @rendering_id = @jwt_decoded_token['data']['relationships']['renderings']['data'][0]['id']
+            { algorithm: 'HS256' }).try(:first)
+
+          # NOTICE: Automatically logs out the users that use tokens having an old data format.
+          if @jwt_decoded_token['data']
+            raise ForestLiana::Errors::HTTP401Error.new("Your token format is invalid, please login again.")
+          end
+
+          @rendering_id = @jwt_decoded_token['rendering_id']
         else
           head :unauthorized
         end
@@ -103,24 +116,27 @@ module ForestLiana
       end
     end
 
-    def get_smart_action_context
-      begin
-        params[:data][:attributes].values[0].to_hash.symbolize_keys
-      rescue => error
-        FOREST_LOGGER.error "Smart Action context retrieval error: #{error}"
-        {}
-      end
-    end
-
-    def route_not_found
-      head :not_found
-    end
-
     def internal_server_error
       head :internal_server_error
     end
 
+    def deactivate_count_response
+      render serializer: nil, json: { meta: { count: 'deactivated'} }
+    end
+
     private
+
+    def render_error(exception)
+      errors = {
+        status: exception.error_code,
+        detail: exception.message,
+      }
+
+      errors['name'] = exception.name if exception.try(:name)
+      errors['data'] = exception.data if exception.try(:data)
+
+      render json: { errors: [errors] }, status: exception.status
+    end
 
     def force_utf8_encoding(json)
       if json['data'].class == Array

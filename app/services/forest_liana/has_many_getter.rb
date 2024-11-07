@@ -1,49 +1,29 @@
 module ForestLiana
   class HasManyGetter < BaseGetter
     attr_reader :search_query_builder
+    attr_reader :includes
     attr_reader :records_count
 
-    def initialize(resource, association, params)
+    def initialize(resource, association, params, forest_user)
       @resource = resource
       @association = association
       @params = params
       @collection_name = ForestLiana.name_for(model_association)
       @field_names_requested = field_names_requested
       @collection = get_collection(@collection_name)
-      includes_symbols = includes.map { |association| association.to_sym }
-      @search_query_builder = SearchQueryBuilder.new(@params, includes_symbols, @collection)
+      compute_includes()
+      includes_symbols = @includes.map { |include| include.to_sym }
+      @search_query_builder = SearchQueryBuilder.new(@params, includes_symbols, @collection, forest_user)
 
       prepare_query()
     end
 
     def perform
-      @records = search_query
-      @records = sort_query
+      @records
     end
 
     def count
       @records_count = @records.count
-    end
-
-    def search_query
-      @search_query_builder.perform(@records)
-    end
-
-    def includes
-      @association.klass
-        .reflect_on_all_associations
-        .select do |association|
-          inclusion = !association.options[:polymorphic] &&
-            SchemaUtils.model_included?(association.klass) &&
-            [:belongs_to, :has_and_belongs_to_many].include?(association.macro)
-
-          if @field_names_requested
-            inclusion && @field_names_requested.include?(association.name)
-          else
-            inclusion
-          end
-        end
-        .map { |association| association.name.to_s }
     end
 
     def query_for_batch
@@ -56,14 +36,34 @@ module ForestLiana
 
     private
 
+    def compute_includes
+      @includes = SchemaUtils.association_ref(@association)
+        .reflect_on_all_associations
+        .select do |association|
+
+
+          if SchemaUtils.polymorphic?(association)
+            inclusion = SchemaUtils.polymorphic_models(association)
+                                   .all? { |model| SchemaUtils.model_included?(model) } &&
+              [:belongs_to, :has_and_belongs_to_many].include?(association.macro)
+          else
+            inclusion = SchemaUtils.model_included?(association.klass) &&
+              [:belongs_to, :has_and_belongs_to_many].include?(association.macro)
+          end
+
+            if @field_names_requested
+              inclusion && @field_names_requested.include?(association.name)
+            else
+              inclusion
+            end
+          end
+        .map { |association| association.name }
+    end
+
     def field_names_requested
       return nil unless @params[:fields] && @params[:fields][@collection_name]
       @params[:fields][@collection_name].split(',')
         .map { |name| name.to_sym }
-    end
-
-    def association_table_name
-      model_association.try(:table_name)
     end
 
     def model_association
@@ -71,10 +71,8 @@ module ForestLiana
     end
 
     def prepare_query
-      @records = get_resource()
-        .find(@params[:id])
-        .send(@params[:association_name])
-        .eager_load(includes)
+      association = get_resource().find(@params[:id]).send(@params[:association_name])
+      @records = optimize_record_loading(association, @search_query_builder.perform(association))
     end
 
     def offset
@@ -99,23 +97,5 @@ module ForestLiana
     def pagination?
       @params[:page] && @params[:page][:number]
     end
-
-    def sort_query
-      if @params[:sort]
-        field = @params[:sort]
-        order = detect_sort_order(field)
-        field.slice!(0) if order == :desc
-
-        @records = @records
-          .order("#{association_table_name}.#{field} #{order.upcase}")
-      else
-        @records
-      end
-    end
-
-    def detect_sort_order(field)
-      return (if field[0] == '-' then :desc else :asc end)
-    end
-
   end
 end

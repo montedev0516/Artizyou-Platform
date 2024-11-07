@@ -32,7 +32,7 @@ module ForestLiana
         end
 
         @records = @invoices.data.map do |d|
-          d.date = Time.at(d.date).to_datetime
+          d.date = Time.at(d.created).to_datetime
           d.period_start = Time.at(d.period_start).to_datetime
           d.period_end = Time.at(d.period_end).to_datetime
           d.subtotal /= 100.00
@@ -50,6 +50,7 @@ module ForestLiana
           d
         end
       rescue ::Stripe::InvalidRequestError => error
+        FOREST_REPORTER.report error
         FOREST_LOGGER.error "Stripe error: #{error.message}"
         @records = []
       end
@@ -57,7 +58,7 @@ module ForestLiana
 
     def fetch_invoices(params)
       return if @params[:id] && params[:customer].blank?
-      ::Stripe::Invoice.all(params)
+      ::Stripe::Invoice.list(params)
     end
 
     def starting_after

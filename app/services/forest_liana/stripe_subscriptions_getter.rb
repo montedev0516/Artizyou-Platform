@@ -43,6 +43,7 @@ module ForestLiana
           d
         end
       rescue ::Stripe::InvalidRequestError => error
+        FOREST_REPORTER.report error
         FOREST_LOGGER.error "Stripe error: #{error.message}"
         @records = []
       end
@@ -50,7 +51,7 @@ module ForestLiana
 
     def fetch_subscriptions(params)
       return if @params[:id] && params[:customer].blank?
-      ::Stripe::Subscription.all(params)
+      ::Stripe::Subscription.list(params)
     end
 
     def starting_after

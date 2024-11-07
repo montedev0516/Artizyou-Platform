@@ -8,6 +8,8 @@ module ForestLiana
       add_columns
       add_associations
 
+      collection.fields.sort_by!.with_index { |k, idx| [k[:field].to_s, idx] }
+
       # NOTICE: Add ActsAsTaggable fields
       if @model.try(:taggable?) && @model.respond_to?(:acts_as_taggable) &&
         @model.acts_as_taggable.respond_to?(:to_a)
@@ -98,11 +100,12 @@ module ForestLiana
     def add_columns
       @model.columns.each do |column|
         unless is_sti_column_of_child_model?(column)
-          collection.fields << get_schema_for_column(column)
+          field_schema = get_schema_for_column(column)
+          collection.fields << field_schema unless field_schema.nil?
         end
       end
 
-      # NOTICE: Add Intercom fields
+      
       if ForestLiana.integrations.try(:[], :intercom)
         .try(:[], :mapping).try(:include?, @model.name)
 
@@ -111,18 +114,20 @@ module ForestLiana
         collection.fields << {
           field: :intercom_conversations,
           type: ['String'],
+          relationship: 'HasMany',
           reference: "#{model_name}_intercom_conversations.id",
           column: nil,
-          'is-filterable': false,
+          is_filterable: false,
           integration: 'intercom'
         }
 
-        @collection.fields << {
+        collection.fields << {
           field: :intercom_attributes,
           type: 'String',
+          relationship: 'HasOne',
           reference: "#{model_name}_intercom_attributes.id",
           column: nil,
-          'is-filterable': false,
+          is_filterable: false,
           integration: 'intercom'
         }
       end
@@ -141,45 +146,50 @@ module ForestLiana
           collection.fields << {
             field: :stripe_payments,
             type: ['String'],
+            relationship: 'HasMany',
             reference: "#{model_name}_stripe_payments.id",
             column: nil,
-            'is-filterable': false,
+            is_filterable: false,
             integration: 'stripe'
           }
 
           collection.fields << {
             field: :stripe_invoices,
             type: ['String'],
+            relationship: 'HasMany',
             reference: "#{model_name}_stripe_invoices.id",
             column: nil,
-            'is-filterable': false,
+            is_filterable: false,
             integration: 'stripe'
           }
 
           collection.fields << {
             field: :stripe_cards,
             type: ['String'],
+            relationship: 'HasMany',
             reference: "#{model_name}_stripe_cards.id",
             column: nil,
-            'is-filterable': false,
+            is_filterable: false,
             integration: 'stripe'
           }
 
           collection.fields << {
             field: :stripe_subscriptions,
             type: ['String'],
+            relationship: 'HasMany',
             reference: "#{model_name}_stripe_subscriptions.id",
             column: nil,
-            'is-filterable': false,
+            is_filterable: false,
             integration: 'stripe'
           }
 
           collection.fields << {
             field: :stripe_bank_accounts,
             type: ['String'],
+            relationship: 'HasMany',
             reference: "#{model_name}_stripe_bank_accounts.id",
             column: nil,
-            'is-filterable': false,
+            is_filterable: false,
             integration: 'stripe'
           }
         end
@@ -199,10 +209,10 @@ module ForestLiana
         collection.fields << {
           field: :mixpanel_last_events,
           type: ['String'],
+          relationship: 'HasMany',
           reference: "#{model_name}_mixpanel_events.id",
           column: nil,
-          'is-filterable': false,
-          'display-name': 'Last events',
+          is_filterable: false,
           integration: 'mixpanel',
         }
       end
@@ -231,8 +241,30 @@ module ForestLiana
     def add_associations
       SchemaUtils.associations(@model).each do |association|
         begin
+          if SchemaUtils.polymorphic?(association) &&
+            collection.fields << {
+              field: association.name.to_s,
+              type: get_type_for_association(association),
+              relationship: get_relationship_type(association),
+              reference: "#{association.name.to_s}.id",
+              inverse_of: @model.name.demodulize.underscore,
+              is_filterable: false,
+              is_sortable: true,
+              is_read_only: false,
+              is_required: false,
+              is_virtual: false,
+              default_value: nil,
+              integration: nil,
+              relationships: nil,
+              widget: nil,
+              validations: [],
+              polymorphic_referenced_models: get_polymorphic_types(association)
+            }
+
+            collection.fields = collection.fields.reject do |field|
+              field[:field] == association.foreign_key || field[:field] == association.foreign_type
+            end
           # NOTICE: Delete the association if the targeted model is excluded.
-          if !SchemaUtils.model_included?(association.klass)
             field = collection.fields.find do |x|
               x[:field] == association.foreign_key
             end
@@ -243,7 +275,8 @@ module ForestLiana
             [:has_one, :belongs_to].include?(association.macro)
               field[:reference] = get_reference_for(association)
               field[:field] = association.name
-              field[:inverseOf] = inverse_of(association)
+              field[:inverse_of] = inverse_of(association)
+              field[:relationship] = get_relationship_type(association)
           # NOTICE: Create the fields of hasOne, HasMany, … relationships.
           else
             collection.fields << get_schema_for_association(association)
@@ -252,6 +285,7 @@ module ForestLiana
           FOREST_LOGGER.warn "The association \"#{association.name.to_s}\" " \
             "does not seem to exist for model \"#{@model.name}\"."
         rescue => exception
+          FOREST_REPORTER.report exception
           FOREST_LOGGER.error "An error occured trying to add " \
             "\"#{association.name.to_s}\" association:\n#{exception}"
         end
@@ -263,18 +297,41 @@ module ForestLiana
         automatic_inverse_of(association)
     end
 
+    end
+
     def automatic_inverse_of(association)
-      name = association.active_record.name.demodulize.underscore
+      if SchemaUtils.polymorphic?(association)
+        polymorphic_inverse_of(association)
+      else
+        name = association.active_record.name.demodulize.underscore
+        inverse_association = association.klass.reflections.keys.find do |k|
+          k.to_s == name || k.to_s == name.pluralize
+        end
 
-      inverse_association = association.klass.reflections.keys.find do |k|
-        k.to_s == name || k.to_s == name.pluralize
+        inverse_association.try(:to_s)
       end
-
-      inverse_association.try(:to_s)
     end
 
     def get_schema_for_column(column)
-      schema = { field: column.name, type: get_type_for(column) }
+      column_type = get_type_for(column)
+      return nil if column_type.nil?
+
+      schema = {
+        field: column.name,
+        type: column_type,
+        is_filterable: true,
+        is_sortable: true,
+        is_read_only: false,
+        is_required: false,
+        is_virtual: false,
+        default_value: nil,
+        integration: nil,
+        reference: nil,
+        inverse_of: nil,
+        relationships: nil,
+        widget: nil,
+        validations: []
+      }
       add_enum_values_if_is_enum(schema, column)
       add_enum_values_if_is_sti_model(schema, column)
       add_default_value(schema, column)
@@ -285,10 +342,24 @@ module ForestLiana
       {
         field: association.name.to_s,
         type: get_type_for_association(association),
-        reference: "#{ForestLiana.name_for(association.klass)}.id",
-        inverseOf: inverse_of(association),
-        'is-filterable': !is_many_association(association)
+        relationship: get_relationship_type(association),
+        reference: "#{ForestLiana.name_for(SchemaUtils.association_ref(association))}.id",
+        inverse_of: inverse_of(association),
+        is_filterable: !is_many_association(association),
+        is_sortable: true,
+        is_read_only: false,
+        is_required: false,
+        is_virtual: false,
+        default_value: nil,
+        integration: nil,
+        relationships: nil,
+        widget: nil,
+        validations: []
       }
+    end
+
+    def get_relationship_type(association)
+      association.macro.to_s.camelize
     end
 
     def get_type_for(column)
@@ -301,16 +372,20 @@ module ForestLiana
       case column.type
       when :boolean
         type = 'Boolean'
-      when :datetime, :date
+      when :datetime
         type = 'Date'
+      when :date
+        type = 'Dateonly'
       when :integer, :float, :decimal
         type = 'Number'
-      when :json, :jsonb
+      when :json, :jsonb, :hstore
         type = 'Json'
-      when :string, :text, :citext, :uuid
+      when :string, :text, :citext, :xml
         type = 'String'
       when :time
         type = 'Time'
+      when :uuid
+        type = 'Uuid'
       end
 
       is_array = (column.respond_to?(:array) && column.array == true)
@@ -358,7 +433,7 @@ module ForestLiana
     def add_default_value(column_schema, column)
       # TODO: detect/introspect the attribute default value with Rails 5
       #       ex: attribute :email, :string, default: 'arnaud@forestadmin.com'
-      column_schema['default-value'] = column.default if column.default
+      column_schema[:default_value] = column.default if column.default
     end
 
     def add_validations(column_schema, column)
@@ -369,11 +444,9 @@ module ForestLiana
       end
 
       if @model._validators? && @model._validators[column.name.to_sym].size > 0
-        column_schema[:validations] = []
-
         @model._validators[column.name.to_sym].each do |validator|
           # NOTICE: Do not consider conditional validations
-          next if validator.options[:if] || validator.options[:unless]
+          next if validator.options[:if] || validator.options[:unless] || validator.options[:on]
 
           case validator
           when ActiveRecord::Validations::PresenceValidator
@@ -381,7 +454,7 @@ module ForestLiana
               type: 'is present',
               message: validator.options[:message]
             }
-            column_schema['is-required'] = true
+            column_schema[:is_required] = true
           when ActiveModel::Validations::NumericalityValidator
             validator.options.each do |option, value|
               case option
@@ -400,31 +473,33 @@ module ForestLiana
               end
             end
           when ActiveModel::Validations::LengthValidator
-            validator.options.each do |option, value|
-              case option
-              when :minimum
-                column_schema[:validations] << {
-                  type: 'is longer than',
-                  value: value,
-                  message: validator.options[:message]
-                }
-              when :maximum
-                column_schema[:validations] << {
-                  type: 'is shorter than',
-                  value: value,
-                  message: validator.options[:message]
-                }
-              when :is
-                column_schema[:validations] << {
-                  type: 'is longer than',
-                  value: value,
-                  message: validator.options[:message]
-                }
-                column_schema[:validations] << {
-                  type: 'is shorter than',
-                  value: value,
-                  message: validator.options[:message]
-                }
+            if column_schema[:type] == 'String'
+              validator.options.each do |option, value|
+                case option
+                when :minimum
+                  column_schema[:validations] << {
+                    type: 'is longer than',
+                    value: value,
+                    message: validator.options[:message]
+                  }
+                when :maximum
+                  column_schema[:validations] << {
+                    type: 'is shorter than',
+                    value: value,
+                    message: validator.options[:message]
+                  }
+                when :is
+                  column_schema[:validations] << {
+                    type: 'is longer than',
+                    value: value,
+                    message: validator.options[:message]
+                  }
+                  column_schema[:validations] << {
+                    type: 'is shorter than',
+                    value: value,
+                    message: validator.options[:message]
+                  }
+                end
               end
             end
           when ActiveModel::Validations::FormatValidator
@@ -436,7 +511,7 @@ module ForestLiana
                 regex = value.source
 
                 # NOTICE: Transform a Ruby regex into a JS one
-                regex = regex.sub('\\A' , '^').sub('\\Z' , '$').sub('\\z' , '$')
+                regex = regex.sub('\\A' , '^').sub('\\Z' , '$').sub('\\z' , '$').gsub(/\n+|\s+/, '')
 
                 column_schema[:validations] << {
                   type: 'is like',
@@ -457,7 +532,7 @@ module ForestLiana
     end
 
     def get_reference_for(association)
-      if association.options[:polymorphic] == true
+      if SchemaUtils.polymorphic?(association)
         '*.id'
       else
         "#{ForestLiana.name_for(association.klass)}.id"
