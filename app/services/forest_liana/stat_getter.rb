@@ -6,13 +6,19 @@ module ForestLiana
       @resource = resource
       @params = params
       @user = forest_user
-      compute_includes()
+
+      validate_params
+      compute_includes
+    end
+
+    def validate_params
+        raise ForestLiana::Errors::HTTP422Error.new('Invalid aggregate function')
+      end
     end
 
     def get_resource
       super
       @resource.reorder('')
     end
-
   end
 end
