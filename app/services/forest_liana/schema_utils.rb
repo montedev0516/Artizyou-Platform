@@ -4,7 +4,6 @@ module ForestLiana
     def self.associations(active_record_class)
       active_record_class.reflect_on_all_associations.select do |association|
         begin
-          !polymorphic?(association) && !is_active_type?(association.klass)
         rescue
           FOREST_LOGGER.warn "Unknown association #{association.name} on class #{active_record_class.name}"
           false
@@ -18,6 +17,12 @@ module ForestLiana
       end
     end
 
+    def self.belongs_to_associations(active_record_class)
+      self.associations(active_record_class).select do |x|
+        [:belongs_to].include?(x.macro)
+      end
+    end
+
     def self.many_associations(active_record_class)
       self.associations(active_record_class).select do |x|
         [:has_many, :has_and_belongs_to_many].include?(x.macro)
@@ -26,16 +31,11 @@ module ForestLiana
 
     def self.find_model_from_collection_name(collection_name, logs = false)
       model_found = nil
-
       ForestLiana.models.each do |model|
         if model.abstract_class?
           model_found = self.find_model_from_abstract_class(model, collection_name)
         elsif ForestLiana.name_for(model) == collection_name
-          if self.sti_child?(model)
-            model_found = model
-          else
-            model_found = model.base_class
-          end
+          model_found = model
         end
 
         break if model_found
@@ -51,8 +51,6 @@ module ForestLiana
     def self.tables_names
       ActiveRecord::Base.connection.tables
     end
-
-    private
 
     def self.polymorphic?(association)
       association.options[:polymorphic]
@@ -89,29 +87,6 @@ module ForestLiana
     #         See the gem documentation: https://github.com/makandra/active_type
     def self.is_active_type? model
       Object.const_defined?('ActiveType::Object') && model < ActiveType::Object
-    end
-
-    def self.sti_child?(model)
-      begin
-        parent = model.try(:superclass)
-        return false unless parent.try(:table_name)
-
-        if ForestLiana.name_for(parent)
-          inheritance_column = parent.columns.find do |column|
-            (parent.inheritance_column && column.name == parent.inheritance_column)\
-              || column.name == 'type'
-          end
-
-          return inheritance_column.present?
-        end
-      rescue NoMethodError
-        # NOTICE: ActiveRecord::Base throw the exception "undefined method
-        # `abstract_class?' for Object:Class" when calling the existing method
-        # "table_name".
-        return false
-      end
-
-      return false
     end
   end
 end

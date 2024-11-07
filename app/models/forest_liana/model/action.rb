@@ -5,7 +5,7 @@ class ForestLiana::Model::Action
   extend ActiveModel::Naming
 
   attr_accessor :id, :name, :base_url, :endpoint, :http_method, :fields, :redirect,
-    :type, :download, :hooks
+    :type, :download, :hooks, :description, :submit_button_label
 
   def initialize(attributes = {})
     if attributes.key?(:global)
@@ -44,6 +44,12 @@ class ForestLiana::Model::Action
         field.delete(:isRequired)
       end
 
+      if field.key?(:isReadOnly)
+        FOREST_LOGGER.warn "DEPRECATION WARNING: isReadOnly on field \"#{field[:field]}\" is deprecated. Please use is_read_only."
+        field[:is_read_only] = !!field[:isReadOnly]
+        field.delete(:isReadOnly)
+      end
+
       field[:type] = "String" unless field.key?(:type)
       field[:default_value] = nil unless field.key?(:default_value)
       field[:enums] = nil unless field.key?(:enums)
@@ -68,6 +74,8 @@ class ForestLiana::Model::Action
     @type ||= "bulk"
     @download ||= false
     @hooks = !@hooks.nil? ? @hooks.symbolize_keys : nil
+    @description ||= nil
+    @submit_button_label ||= nil
   end
 
   def persisted?

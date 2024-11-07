@@ -8,6 +8,8 @@ module ForestLiana
       add_columns
       add_associations
 
+      collection.fields.sort_by!.with_index { |k, idx| [k[:field].to_s, idx] }
+
       # NOTICE: Add ActsAsTaggable fields
       if @model.try(:taggable?) && @model.respond_to?(:acts_as_taggable) &&
         @model.acts_as_taggable.respond_to?(:to_a)
@@ -103,7 +105,7 @@ module ForestLiana
         end
       end
 
-      # NOTICE: Add Intercom fields
+      
       if ForestLiana.integrations.try(:[], :intercom)
         .try(:[], :mapping).try(:include?, @model.name)
 
@@ -239,8 +241,30 @@ module ForestLiana
     def add_associations
       SchemaUtils.associations(@model).each do |association|
         begin
+          if SchemaUtils.polymorphic?(association) &&
+            collection.fields << {
+              field: association.name.to_s,
+              type: get_type_for_association(association),
+              relationship: get_relationship_type(association),
+              reference: "#{association.name.to_s}.id",
+              inverse_of: @model.name.demodulize.underscore,
+              is_filterable: false,
+              is_sortable: true,
+              is_read_only: false,
+              is_required: false,
+              is_virtual: false,
+              default_value: nil,
+              integration: nil,
+              relationships: nil,
+              widget: nil,
+              validations: [],
+              polymorphic_referenced_models: get_polymorphic_types(association)
+            }
+
+            collection.fields = collection.fields.reject do |field|
+              field[:field] == association.foreign_key || field[:field] == association.foreign_type
+            end
           # NOTICE: Delete the association if the targeted model is excluded.
-          if !SchemaUtils.model_included?(association.klass)
             field = collection.fields.find do |x|
               x[:field] == association.foreign_key
             end
@@ -261,6 +285,7 @@ module ForestLiana
           FOREST_LOGGER.warn "The association \"#{association.name.to_s}\" " \
             "does not seem to exist for model \"#{@model.name}\"."
         rescue => exception
+          FOREST_REPORTER.report exception
           FOREST_LOGGER.error "An error occured trying to add " \
             "\"#{association.name.to_s}\" association:\n#{exception}"
         end
@@ -272,14 +297,19 @@ module ForestLiana
         automatic_inverse_of(association)
     end
 
+    end
+
     def automatic_inverse_of(association)
-      name = association.active_record.name.demodulize.underscore
+      if SchemaUtils.polymorphic?(association)
+        polymorphic_inverse_of(association)
+      else
+        name = association.active_record.name.demodulize.underscore
+        inverse_association = association.klass.reflections.keys.find do |k|
+          k.to_s == name || k.to_s == name.pluralize
+        end
 
-      inverse_association = association.klass.reflections.keys.find do |k|
-        k.to_s == name || k.to_s == name.pluralize
+        inverse_association.try(:to_s)
       end
-
-      inverse_association.try(:to_s)
     end
 
     def get_schema_for_column(column)
@@ -313,7 +343,7 @@ module ForestLiana
         field: association.name.to_s,
         type: get_type_for_association(association),
         relationship: get_relationship_type(association),
-        reference: "#{ForestLiana.name_for(association.klass)}.id",
+        reference: "#{ForestLiana.name_for(SchemaUtils.association_ref(association))}.id",
         inverse_of: inverse_of(association),
         is_filterable: !is_many_association(association),
         is_sortable: true,
@@ -350,10 +380,12 @@ module ForestLiana
         type = 'Number'
       when :json, :jsonb, :hstore
         type = 'Json'
-      when :string, :text, :citext, :uuid
+      when :string, :text, :citext, :xml
         type = 'String'
       when :time
         type = 'Time'
+      when :uuid
+        type = 'Uuid'
       end
 
       is_array = (column.respond_to?(:array) && column.array == true)
@@ -500,7 +532,7 @@ module ForestLiana
     end
 
     def get_reference_for(association)
-      if association.options[:polymorphic] == true
+      if SchemaUtils.polymorphic?(association)
         '*.id'
       else
         "#{ForestLiana.name_for(association.klass)}.id"

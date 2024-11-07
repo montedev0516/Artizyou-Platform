@@ -1,186 +1,211 @@
 require 'rails_helper'
 
 describe 'Requesting Actions routes', :type => :request  do
+  let(:rendering_id) { 13 }
+  let(:scope_filters) { {'scopes' => {}, 'team' => {'id' => '1', 'name' => 'Operations'}} }
+
   before(:each) do
     allow(ForestLiana::IpWhitelist).to receive(:is_ip_whitelist_retrieved) { true }
     allow(ForestLiana::IpWhitelist).to receive(:is_ip_valid) { true }
-    Island.create(name: 'Corsica')
+    Island.create(id: 1, name: 'Corsica')
+
+    ForestLiana::ScopeManager.invalidate_scope_cache(rendering_id)
+    allow(ForestLiana::ScopeManager).to receive(:fetch_scopes).and_return(scope_filters)
   end
 
   after(:each) do
     Island.destroy_all
   end
 
-  describe 'call /values' do
-    it 'should respond 200' do
-      post '/forest/actions/foo/values', {}
-      expect(response.status).to eq(200)
-      expect(response.body).to be {}
-    end
-  end
+  let(:token) {
+    JWT.encode({
+      id: 38,
+      email: 'michael.kelso@that70.show',
+      first_name: 'Michael',
+      last_name: 'Kelso',
+      team: 'Operations',
+      rendering_id: rendering_id,
+      exp: Time.now.to_i + 2.weeks.to_i,
+      permission_level: 'admin'
+    }, ForestLiana.auth_secret, 'HS256')
+  }
+
+  let(:headers) {
+    {
+      'Accept' => 'application/json',
+      'Content-Type' => 'application/json',
+      'Authorization' => "Bearer #{token}"
+    }
+  }
 
   describe 'hooks' do
-    foo = {
-        field: 'foo',
-        type: 'String',
-        default_value: nil,
-        enums: nil,
-        is_required: false,
-        is_read_only: false,
-        reference: nil,
-        description: nil,
-        widget: nil,
-    }
-    enum = {
-        field: 'enum',
-        type: 'Enum',
-        enums: %w[a b c],
-    }
-    multiple_enum = {
-        field: 'multipleEnum',
-        type: ['Enum'],
-        enums: %w[a b c],
-    }
+    island = ForestLiana.apimap.find {|collection| collection.name.to_s == ForestLiana.name_for(Island)}
 
-    action_definition = {
-        name: 'my_action',
-        fields: [foo],
-        hooks: {
-            :load => -> (context) {
-              context[:fields]
-            },
-            :change => {
-              'foo' => -> (context) {
-                fields = context[:fields]
-                fields['foo'][:value] = 'baz'
-                return fields
-              }
-            }
-        }
-    }
-    fail_action_definition = {
-        name: 'fail_action',
-        fields: [foo],
-        hooks: {
-            :load => -> (context) {
-              1
-            },
-            :change => {
-                'foo' => -> (context) {
-                  1
-                }
-            }
-        }
-    }
-    cheat_action_definition = {
-        name: 'cheat_action',
-        fields: [foo],
-        hooks: {
-            :load => -> (context) {
-              context[:fields]['baz'] = foo.clone.update({field: 'baz'})
-              context[:fields]
-            },
-            :change => {
-                'foo' => -> (context) {
-                  context[:fields]['baz'] = foo.clone.update({field: 'baz'})
-                  context[:fields]
-                }
-            }
-        }
-    }
-    enums_action_definition = {
-      name: 'enums_action',
-      fields: [foo, enum],
-      hooks: {
-        :change => {
-          'foo' => -> (context) {
-            fields = context[:fields]
-            fields['enum'][:enums] = %w[c d e]
-            return fields
-          }
+    describe 'call /load on layout form' do
+      params = {
+        data: {
+          attributes: { ids: [1], collection_name: 'Island' }
         }
       }
-    }
 
-    multiple_enums_action_definition = {
-        name: 'multiple_enums_action',
-        fields: [foo, multiple_enum],
-        hooks: {
-            :change => {
-                'foo' => -> (context) {
-                  fields = context[:fields]
-                  fields['multipleEnum'][:enums] = %w[c d z]
-                  return fields
-                }
-            }
-        }
-    }
+      it 'should respond 200 with expected response on load' do
+        post '/forest/actions/my_action_with_layout/hooks/load', params: JSON.dump(params), headers: headers
+        result = JSON.parse(response.body)
 
-    action = ForestLiana::Model::Action.new(action_definition)
-    fail_action = ForestLiana::Model::Action.new(fail_action_definition)
-    cheat_action = ForestLiana::Model::Action.new(cheat_action_definition)
-    enums_action = ForestLiana::Model::Action.new(enums_action_definition)
-    multiple_enums_action = ForestLiana::Model::Action.new(multiple_enums_action_definition)
-    island = ForestLiana.apimap.find {|collection| collection.name.to_s == ForestLiana.name_for(Island)}
-    island.actions = [action, fail_action, cheat_action, enums_action, multiple_enums_action]
+        expect(response.status).to eq(200)
+        expect(result).to eq(
+          {
+            "fields" => [
+              {
+                "field"=>"foo",
+                "type"=>"String",
+                "defaultValue"=>nil,
+                "enums"=>nil,
+                "isRequired"=>false,
+                "isReadOnly"=>false,
+                "reference"=>nil,
+                "description"=>nil,
+                "hook"=>"on_foo_changed",
+                "position"=>0,
+                "widgetEdit"=>nil,
+                "value"=>nil
+              },
+              { "field"=>"field 1", "type"=>"String"},
+              {"field"=>"field 2", "type"=>"String" }
+            ],
+            "layout"=>[
+              {
+                "type"=>"Layout",
+                "component"=>"page",
+                "elements"=>[
+                  {"type"=>"Layout", "component"=>"htmlBlock", "content"=>"<p>test</p>"},
+                  {"type"=>"Layout", "component"=>"separator"},
+                  {"component"=>"input", "fieldId"=>"foo"},
+                  {"component"=>"input", "fieldId"=>"field 1"},
+                  {"type"=>"Layout", "component"=>"separator"},
+                  {"component"=>"input", "fieldId"=>"field 2"}
+                ]
+              }
+            ]
+          }
+        )
+      end
+    end
 
     describe 'call /load' do
-      params = {recordIds: [1], collectionName: 'Island'}
+      params = {
+        data: {
+          attributes: { ids: [1], collection_name: 'Island' }
+        }
+      }
 
       it 'should respond 200' do
-        post '/forest/actions/my_action/hooks/load', params: JSON.dump(params), headers: { 'CONTENT_TYPE' => 'application/json' }
+        post '/forest/actions/my_action/hooks/load', params: JSON.dump(params), headers: headers
+        action = island.actions.select { |action| action.name == 'my_action' }.first
+        foo = action.fields.select { |field| field[:field] == 'foo' }.first
         expect(response.status).to eq(200)
-        expect(JSON.parse(response.body)).to eq({'fields' => [foo.merge({:value => nil}).stringify_keys]})
+        expect(JSON.parse(response.body)).to eq({'fields' => [foo.merge({:value => nil}).transform_keys { |key| key.to_s.camelize(:lower) }.stringify_keys]})
+        # action form without layout elements should not have the key layout
+        expect(JSON.parse(response.body)).not_to have_key('layout')
       end
 
-      it 'should respond 500 with bad params' do
-        post '/forest/actions/my_action/hooks/load', params: {}
-        expect(response.status).to eq(500)
+      it 'should respond 422 with bad params' do
+        post '/forest/actions/my_action/hooks/load', params: {}, headers: headers
+        expect(response.status).to eq(422)
       end
 
       it 'should respond 500 with bad hook result type' do
-        post '/forest/actions/fail_action/hooks/load', params: JSON.dump(params), headers: { 'CONTENT_TYPE' => 'application/json' }
+        post '/forest/actions/fail_action/hooks/load', params: JSON.dump(params), headers: headers
         expect(response.status).to eq(500)
+        expect(JSON.parse(response.body)).to eq({'error' => 'Error in smart action load hook: hook must return an array of fields'})
       end
 
       it 'should respond 500 with bad hook result data structure' do
-        post '/forest/actions/cheat_action/hooks/load', params: JSON.dump(params), headers: { 'CONTENT_TYPE' => 'application/json' }
+        post '/forest/actions/cheat_action/hooks/load', params: JSON.dump(params), headers: headers
         expect(response.status).to eq(500)
+        expect(JSON.parse(response.body)).to eq({'error' => 'Error in smart action load hook: hook must return an array of fields'})
+      end
+
+      it 'should return the first_name of the user who call the action' do
+        post '/forest/actions/use_user_context/hooks/load', params: JSON.dump(params), headers: headers
+        action = island.actions.select { |action| action.name == 'use_user_context' }.first
+        foo = action.fields.select { |field| field[:field] == 'foo' }.first
+        expect(response.status).to eq(200)
+        expect(JSON.parse(response.body)).to eq({'fields' => [foo.merge({:value => 'Michael'}).transform_keys { |key| key.to_s.camelize(:lower) }.stringify_keys]})
       end
     end
 
     describe 'call /change' do
-      updated_foo = foo.clone.merge({:previousValue => nil, :value => 'bar'})
-      params = {recordIds: [1], fields: [updated_foo], collectionName: 'Island', changedField: 'foo'}
-
       it 'should respond 200' do
-        post '/forest/actions/my_action/hooks/change', params: JSON.dump(params), headers: { 'CONTENT_TYPE' => 'application/json' }
+        action = island.actions.select { |action| action.name == 'my_action' }.first
+        foo = action.fields.select { |field| field[:field] == 'foo' }.first
+        updated_foo = foo.clone.merge({:previousValue => nil, :value => 'bar'})
+        params = {
+          data: {
+            attributes: {
+              ids: [1],
+              fields: [updated_foo],
+              collection_name: 'Island',
+              changed_field: 'foo',
+              is_read_only: true
+            }
+          }
+        }
+
+        post '/forest/actions/my_action/hooks/change', params: JSON.dump(params), headers: headers
         expect(response.status).to eq(200)
         expected = updated_foo.clone.merge({:value => 'baz'})
         expected[:widgetEdit] = nil
         expected.delete(:widget)
+        expected = expected.transform_keys { |key| key.to_s.camelize(:lower) }
         expect(JSON.parse(response.body)).to eq({'fields' => [expected.stringify_keys]})
       end
 
       it 'should respond 500 with bad params' do
-        post '/forest/actions/my_action/hooks/change', params: {}
+        post '/forest/actions/my_action/hooks/change', params: JSON.dump({ data: { attributes: { collection_name: 'Island' }}}), headers: headers
         expect(response.status).to eq(500)
+        expect(JSON.parse(response.body)).to eq({'error' => 'Error in smart action change hook: fields params is mandatory'})
       end
 
       it 'should respond 500 with bad hook result type' do
-        post '/forest/actions/fail_action/hooks/change', params: JSON.dump(params), headers: { 'CONTENT_TYPE' => 'application/json' }
-        expect(response.status).to eq(500)
-      end
+        action = island.actions.select { |action| action.name == 'fail_action' }.first
+        foo = action.fields.select { |field| field[:field] == 'foo' }.first
+        updated_foo = foo.clone.merge({:previousValue => nil, :value => 'bar'})
+        params = {
+          data: {
+            attributes: {
+              ids: [1],
+              fields: [updated_foo],
+              collection_name: 'Island',
+              changed_field: 'foo',
+              is_read_only: true
+            }
+          }
+        }
 
-      it 'should respond 500 with bad hook result data structure' do
-        post '/forest/actions/cheat_action/hooks/change', params: JSON.dump(params), headers: { 'CONTENT_TYPE' => 'application/json' }
+        post '/forest/actions/fail_action/hooks/change', params: JSON.dump(params), headers: headers
         expect(response.status).to eq(500)
+        expect(JSON.parse(response.body)).to eq({'error' => 'Error in smart action load hook: hook must return an array of fields'})
       end
 
       it 'should reset value when enums has changed' do
+        action = island.actions.select { |action| action.name == 'enums_action' }.first
+        foo = action.fields.select { |field| field[:field] == 'foo' }.first
+        enum = action.fields.select { |field| field[:field] == 'enum' }.first
+        updated_foo = foo.clone.merge({:previousValue => nil, :value => 'bar'})
         updated_enum = enum.clone.merge({:previousValue => nil, :value => 'a'}) # set value to a
-        p = {recordIds: [1], fields: [updated_foo, updated_enum], collectionName: 'Island', changedField: 'foo'}
-        post '/forest/actions/enums_action/hooks/change', params: JSON.dump(p), headers: { 'CONTENT_TYPE' => 'application/json' }
+        p = {
+          data: {
+            attributes: {
+              ids: [1],
+              fields: [updated_foo, updated_enum],
+              collection_name: 'Island',
+              changed_field: 'foo'
+            }
+          }
+        }
+
+        post '/forest/custom/islands/enums_action/hooks/change', params: JSON.dump(p), headers: headers
         expect(response.status).to eq(200)
 
         expected_enum = updated_enum.clone.merge({ :enums => %w[c d e], :value => nil, :widgetEdit => nil})
@@ -188,13 +213,28 @@ describe 'Requesting Actions routes', :type => :request  do
         expected_foo = updated_foo.clone.merge({ :widgetEdit => nil})
         expected_foo.delete(:widget)
 
+        expected_enum = expected_enum.transform_keys { |key| key.to_s.camelize(:lower) }
+        expected_foo = expected_foo.transform_keys { |key| key.to_s.camelize(:lower) }
+
         expect(JSON.parse(response.body)).to eq({'fields' => [expected_foo.stringify_keys, expected_enum.stringify_keys]})
       end
 
       it 'should not reset value when every enum values are in the enums definition' do
+        action = island.actions.select { |action| action.name == 'multiple_enums_action' }.first
+        foo = action.fields.select { |field| field[:field] == 'foo' }.first
+        multiple_enum = action.fields.select { |field| field[:field] == 'multipleEnum' }.first
         updated_multiple_enum = multiple_enum.clone.merge({:previousValue => nil, :value => %w[c]})
-        p = {recordIds: [1], fields: [foo, updated_multiple_enum], collectionName: 'Island', changedField: 'foo'}
-        post '/forest/actions/multiple_enums_action/hooks/change', params: JSON.dump(p), headers: { 'CONTENT_TYPE' => 'application/json' }
+        p = {
+          data: {
+            attributes: {
+              ids: [1],
+              fields: [foo, updated_multiple_enum],
+              collection_name: 'Island',
+              changed_field: 'foo'
+            }
+          }
+        }
+        post '/forest/actions/multiple_enums_action/hooks/change', params: JSON.dump(p), headers: headers
         expect(response.status).to eq(200)
 
         expected_multiple_enum = updated_multiple_enum.clone.merge({ :enums => %w[c d z], :widgetEdit => nil, :value => %w[c]})
@@ -202,13 +242,29 @@ describe 'Requesting Actions routes', :type => :request  do
         expected_foo = foo.clone.merge({ :widgetEdit => nil})
         expected_foo.delete(:widget)
 
+        expected_multiple_enum = expected_multiple_enum.transform_keys { |key| key.to_s.camelize(:lower) }
+        expected_foo = expected_foo.transform_keys { |key| key.to_s.camelize(:lower) }
+
         expect(JSON.parse(response.body)).to eq({'fields' => [expected_foo.stringify_keys, expected_multiple_enum.stringify_keys]})
       end
 
       it 'should reset value when one of the enum values is not in the enums definition' do
+        action = island.actions.select { |action| action.name == 'multiple_enums_action' }.first
+        foo = action.fields.select { |field| field[:field] == 'foo' }.first
+        multiple_enum = action.fields.select { |field| field[:field] == 'multipleEnum' }.first
         wrongly_updated_multiple_enum = multiple_enum.clone.merge({:previousValue => nil, :value => %w[a b]})
-        p = {recordIds: [1], fields: [foo, wrongly_updated_multiple_enum], collectionName: 'Island', changedField: 'foo'}
-        post '/forest/actions/multiple_enums_action/hooks/change', params: JSON.dump(p), headers: { 'CONTENT_TYPE' => 'application/json' }
+        p = {
+          data: {
+            attributes: {
+              ids: [1],
+              fields: [foo, wrongly_updated_multiple_enum],
+              collection_name: 'Island',
+              changed_field: 'foo'
+            }
+          }
+        }
+
+        post '/forest/actions/multiple_enums_action/hooks/change', params: JSON.dump(p), headers: headers
         expect(response.status).to eq(200)
 
         expected_multiple_enum = wrongly_updated_multiple_enum.clone.merge({ :enums => %w[c d z], :widgetEdit => nil, :value => nil })
@@ -216,7 +272,235 @@ describe 'Requesting Actions routes', :type => :request  do
         expected_foo = foo.clone.merge({ :widgetEdit => nil})
         expected_foo.delete(:widget)
 
+        expected_multiple_enum = expected_multiple_enum.transform_keys { |key| key.to_s.camelize(:lower) }
+        expected_foo = expected_foo.transform_keys { |key| key.to_s.camelize(:lower) }
+
         expect(JSON.parse(response.body)).to eq({'fields' => [expected_foo.stringify_keys, expected_multiple_enum.stringify_keys]})
+      end
+    end
+  end
+
+  describe 'calling the action on development environment' do
+    let(:all_records) { false }
+    let(:params) {
+      {
+        data: {
+          attributes: {
+            collection_name: 'Island',
+            ids: ['1'],
+            all_records: all_records,
+            smart_action_id: 'Island-Test'
+          },
+          type: 'custom-action-requests'
+        },
+        timezone: 'Europe/Paris'
+      }
+    }
+
+    it 'should respond 200 and perform the action' do
+      Rails.cache.delete('forest.has_permission')
+      Rails.cache.delete('forest.users')
+      Rails.cache.write('forest.users', {'1' => { 'id' => 1, 'roleId' => 2, 'rendering_id' => '1' }})
+      allow_any_instance_of(ForestLiana::Ability::Fetch)
+        .to receive(:get_permissions)
+              .with('/liana/v4/permissions/environment')
+              .and_return(true)
+
+      post '/forest/actions/test', params: JSON.dump(params), headers: headers
+
+      expect(response.status).to eq(200)
+      expect(JSON.parse(response.body)).to eq({'success' => 'You are OK.'})
+    end
+  end
+
+  describe 'calling the action' do
+    let(:all_records) { false }
+    let(:params) {
+      {
+        data: {
+          attributes: {
+            collection_name: 'Island',
+            ids: ['1'],
+            all_records: all_records,
+            smart_action_id: 'Island-Test'
+          },
+          type: 'custom-action-requests'
+        },
+        timezone: 'Europe/Paris'
+      }
+    }
+
+    describe 'without scopes' do
+      it 'should respond 200 and perform the action' do
+        allow_any_instance_of(ForestLiana::Ability).to receive(:forest_authorize!) { true }
+        post '/forest/actions/test', params: JSON.dump(params), headers: headers
+        expect(response.status).to eq(200)
+        expect(JSON.parse(response.body)).to eq({'success' => 'You are OK.'})
+      end
+
+      let(:params) {
+        {
+          data: {
+            attributes: {
+              collection_name: 'Island',
+              ids: ['1'],
+              all_records: all_records,
+              smart_action_id: 'Island-Test'
+            },
+            type: 'custom-action-requests'
+          },
+          timezone: 'Europe/Paris'
+        }
+      }
+
+      describe 'with invalid conditions' do
+        it 'should respond a 409' do
+          Rails.cache.write('forest.has_permission', true)
+          Rails.cache.write('forest.users', {'38' => { 'id' => 38, 'roleId' => 1, 'rendering_id' => '13' }})
+          Rails.cache.write(
+            'forest.collections',
+            {
+              'Island' => {
+                :actions =>
+                  {
+                    'test' => { 'triggerEnabled' => [1],
+                      'triggerConditions' => [],
+                      'approvalRequired' => [1],
+                      'approvalRequiredConditions' =>
+                        [
+                          { 'filter' =>
+                            { 'field' => 'id',
+                              'value' => 2,
+                              'source' => 'data',
+                              'operator' => 'foo-greater-than'
+                            },
+                            'roleId' => 1
+                          }
+                        ],
+                    }
+                  }
+              }
+            }
+          )
+
+          post '/forest/actions/test', params: JSON.dump(params), headers: headers
+
+          expect(response.status).to eq(409)
+          expect(JSON.parse(response.body)).to eq(
+            {
+              "errors" => [
+                {
+                  "status" => 409,
+                  "detail" => "The conditions to trigger this action cannot be verified. Please contact an administrator.",
+                  "name" => "InvalidActionConditionError"
+                }
+              ]
+            }
+          )
+        end
+      end
+
+      describe 'with unknown action' do
+        it 'should respond a 409' do
+          Rails.cache.write('forest.has_permission', true)
+          Rails.cache.write('forest.users', {'38' => { 'id' => 38, 'roleId' => 1, 'rendering_id' => '13' }})
+          Rails.cache.write(
+            'forest.collections',
+            {
+              'Island' => {
+                :actions =>
+                  {
+                    'test' => { 'triggerEnabled' => [1],
+                      'triggerConditions' => [],
+                      'approvalRequired' => [1],
+                      'approvalRequiredConditions' =>
+                        [
+                          { 'filter' =>
+                            { 'field' => 'id',
+                              'value' => 2,
+                              'source' => 'data',
+                              'operator' => 'foo-greater-than'
+                            },
+                            'roleId' => 1
+                          }
+                        ],
+                    }
+                  }
+              }
+            }
+          )
+
+          post '/forest/actions/unknown_action', params: JSON.dump(params), headers: headers
+
+          expect(response.status).to eq(409)
+          expect(JSON.parse(response.body)).to eq(
+            {"errors"=> [{"detail" => "The collection Island doesn't exist", "name" => "collection not found", "status" => 409}]}
+          )
+        end
+      end
+    end
+
+    describe 'with scopes' do
+      before(:each) do
+        allow_any_instance_of(ForestLiana::Ability).to receive(:forest_authorize!) { true }
+      end
+
+      describe 'when record is in scope' do
+        let(:scope_filters) {
+          {
+            'scopes' =>
+              {
+                'Island' => {
+                  'aggregator' => 'and',
+                  'conditions' => [{'field' => 'name', 'operator' => 'equal', 'value' => 'Corsica'}]
+                }
+              },
+            'team' => {
+              'id' => 43,
+              'name' => 'Operations'
+            }
+          }
+        }
+
+        it 'should respond 200 and perform the action' do
+          post '/forest/actions/test', params: JSON.dump(params), headers: headers
+          expect(response.status).to eq(200)
+          expect(JSON.parse(response.body)).to eq({'success' => 'You are OK.'})
+        end
+      end
+
+      describe 'when record is out of scope' do
+        let(:scope_filters) {
+          {
+            'scopes' =>
+              {
+                'Island' => {
+                  'aggregator' => 'and',
+                  'conditions' => [{'field' => 'name', 'operator' => 'equal', 'value' => 'Ré'}]
+                }
+              },
+            'team' => {
+              'id' => 43,
+              'name' => 'Operations'
+            }
+          }
+        }
+
+        it 'should respond 400 and NOT perform the action' do
+          post '/forest/actions/test', params: JSON.dump(params), headers: headers
+          expect(response.status).to eq(400)
+          expect(JSON.parse(response.body)).to eq({ 'error' => 'Smart Action: target record not found' })
+        end
+
+        describe 'and all_records are targeted' do
+          let(:all_records) { true }
+
+          it 'should respond 200 and perform the action' do
+            post '/forest/actions/test', params: JSON.dump(params), headers: headers
+            expect(response.status).to eq(200)
+            expect(JSON.parse(response.body)).to eq({'success' => 'You are OK.'})
+          end
+        end
       end
     end
   end
