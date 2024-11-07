@@ -15,80 +15,48 @@ module ForestLiana
       Tree.create!(name: 'Tree n3', age: 4, island: island, owner: king, cutter: villager)
     end
 
-    let(:params) {
-      {
-        type: "Value",
-        collection: collection,
-        timezone: "Europe/Paris",
-        aggregate: "Count",
-        filters: filters
-      }
-    }
+    describe 'with not allowed aggregator' do
+      let(:model) { User }
+      let(:collection) { 'users' }
+          it 'should have a countCurrent of 0' do
+            subject.perform
+            expect(subject.record.value[:countCurrent]).to eq 0
+          end
+        end
 
-    subject { ValueStatGetter.new(model, params, user) }
+        describe 'with a filter on a belongs_to string field' do
+          let(:model) { Tree }
 
-    describe 'with empty scopes' do
-      let(:scopes) { { } }
+          it 'should have a countCurrent of 2' do
+            subject.perform
+            expect(subject.record.value[:countCurrent]).to eq 2
+          end
+        end
 
-      describe 'with a simple filter matching no entries' do
-        let(:model) { User }
-        let(:collection) { 'users' }
-        let(:filters) { { field: 'name', operator: 'in', value: ['Merry', 'Pippin'] }.to_json }
+        describe 'with a filter on a belongs_to enum field' do
+          let(:model) { Tree }
 
-        it 'should have a countCurrent of 0' do
-          subject.perform
-          expect(subject.record.value[:countCurrent]).to eq 0
+          it 'should have a countCurrent of 1' do
+            subject.perform
+            expect(subject.record.value[:countCurrent]).to eq 1
+          end
         end
       end
 
-      describe 'with a filter on a belongs_to string field' do
-        let(:model) { Tree }
-        let(:collection) { 'trees' }
-        let(:filters) { { field: 'owner:name', operator: 'equal', value: 'Aragorn' }.to_json }
-
-        it 'should have a countCurrent of 2' do
-          subject.perform
-          expect(subject.record.value[:countCurrent]).to eq 2
-        end
-      end
-
-      describe 'with a filter on a belongs_to enum field' do
-        let(:model) { Tree }
-        let(:collection) { 'trees' }
-        let(:filters) { { field: 'owner:title', operator: 'equal', value: 'villager' }.to_json }
-
-        it 'should have a countCurrent of 1' do
-          subject.perform
-          expect(subject.record.value[:countCurrent]).to eq 1
-        end
-      end
-    end
-
-    describe 'with scopes' do
-      let(:scopes) {
-        {
-          'User' => {
-            'scope'=> {
-              'filter'=> {
-                'aggregator' => 'and',
-                'conditions' => [
-                  { 'field' => 'title', 'operator' => 'not_equal', 'value' => 'villager' }
-                ]
-              },
-              'dynamicScopesValues' => { }
+      describe 'with scopes' do
+        let(:scopes) {
+          {
             }
           }
         }
-      }
 
-      describe 'with a filter on a belongs_to enum field' do
-        let(:model) { User }
-        let(:collection) { 'users' }
-        let(:filters) { { field: 'title', operator: 'equal', value: 'villager' }.to_json }
+        describe 'with a filter on a belongs_to enum field' do
+          let(:model) { User }
 
-        it 'should have a countCurrent of 0' do
-          subject.perform
-          expect(subject.record.value[:countCurrent]).to eq 0
+          it 'should have a countCurrent of 0' do
+            subject.perform
+            expect(subject.record.value[:countCurrent]).to eq 0
+          end
         end
       end
     end

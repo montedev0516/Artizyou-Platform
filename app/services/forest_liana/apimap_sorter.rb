@@ -29,6 +29,7 @@ module ForestLiana
       'relationship',
       'widget',
       'validations',
+      'polymorphic_referenced_models',
     ]
     KEYS_ACTION = [
       'name',
@@ -40,6 +41,8 @@ module ForestLiana
       'download',
       'fields',
       'hooks',
+      'description',
+      'submit_button_label',
     ]
     KEYS_ACTION_FIELD = [
       'field',

@@ -15,7 +15,7 @@ module ForestLiana
 
         respond_to do |format|
           format.json { render_jsonapi(getter) }
-          format.csv { render_csv(getter, @association.klass) }
+          format.csv { render_csv(getter, SchemaUtils.association_ref(@association)) }
         end
       rescue => error
         FOREST_REPORTER.report error
@@ -72,12 +72,15 @@ module ForestLiana
 
     def dissociate
       begin
-        dissociator = HasManyDissociator.new(@resource, @association, params)
+        dissociator = HasManyDissociator.new(@resource, @association, params, forest_user)
         dissociator.perform
 
         head :no_content
+      rescue ActiveRecord::RecordNotDestroyed => error
+        render json: { errors: [{ status: :bad_request, detail: error.message }] }, status: :bad_request
       rescue => error
-        FOREST_LOGGER.error "Association Associate error: #{error}\n#{format_stacktrace(error)}"
+        FOREST_REPORTER.report error
+        FOREST_LOGGER.error "Association Dissociate error: #{error}\n#{format_stacktrace(error)}"
         internal_server_error
       end
     end
@@ -110,21 +113,21 @@ module ForestLiana
     end
 
     def is_sti_model?
-      @is_sti_model ||= (@association.klass.inheritance_column.present? &&
-        @association.klass.columns.any? { |column| column.name == @association.klass.inheritance_column })
+      @is_sti_model ||= (SchemaUtils.association_ref(@association).inheritance_column.present? &&
+        SchemaUtils.association_ref(@association).columns.any? { |column| column.name == SchemaUtils.association_ref(@association).inheritance_column })
     end
 
     def get_record record
-      is_sti_model? ? record.becomes(@association.klass) : record
+      is_sti_model? ? record.becomes(SchemaUtils.association_ref(@association)) : record
     end
 
     def render_jsonapi getter
-      fields_to_serialize = fields_per_model(params[:fields], @association.klass)
+      fields_to_serialize = fields_per_model(params[:fields], SchemaUtils.association_ref(@association))
       records = getter.records.map { |record| get_record(record) }
 
       includes = getter.includes_for_serialization
       if fields_to_serialize && includes.length > 0
-        association_name = ForestLiana.name_for(@association.klass)
+        association_name = ForestLiana.name_for(SchemaUtils.association_ref(@association))
         fields_to_serialize[association_name] += ",#{includes.join(',')}"
       end
 

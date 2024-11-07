@@ -5,7 +5,12 @@ module ForestLiana
   class Bootstrapper
     SCHEMA_FILENAME = File.join(Dir.pwd, '.forestadmin-schema.json')
 
-    def initialize
+    def initialize(reset_api_map = false)
+      if reset_api_map
+        ForestLiana.apimap = []
+        ForestLiana.models = []
+      end
+
       @integration_stripe_valid = false
       @integration_intercom_valid = false
 
@@ -18,11 +23,14 @@ module ForestLiana
         ForestLiana.auth_secret = ForestLiana.auth_key
       end
 
-      unless Rails.application.config.action_controller.perform_caching || Rails.env.test? || ForestLiana.forest_client_id
+      if ForestLiana.forest_client_id
+        FOREST_LOGGER.warn "DEPRECATION WARNING: The use of " \
+          "ForestLiana.forest_client_id is deprecated. It's not needed anymore."
+      end
+
+      unless Rails.application.config.action_controller.perform_caching || Rails.env.test?
         FOREST_LOGGER.error "You need to enable caching on your environment to use Forest Admin.\n" \
-          "For a development environment, run: `rails dev:cache`\n" \
-          "Or setup a static forest_client_id by following this part of the documentation:\n" \
-          "https://docs.forestadmin.com/documentation/how-tos/maintain/upgrade-notes-rails/upgrade-to-v6#setup-a-static-clientid"
+          "For a development environment, run: `rails dev:cache`"
       end
 
       fetch_models
@@ -78,7 +86,7 @@ module ForestLiana
         generate_action_hooks
         SchemaFileUpdater.new(SCHEMA_FILENAME, @collections_sent, @meta_sent).perform()
       else
-        if File.exists?(SCHEMA_FILENAME)
+        if File.exist?(SCHEMA_FILENAME)
           begin
             content = JSON.parse(File.read(SCHEMA_FILENAME))
             @collections_sent = content['collections']
@@ -194,7 +202,7 @@ module ForestLiana
     def setup_forest_liana_meta
       ForestLiana.meta = {
         liana: 'forest-rails',
-        liana_version: ForestLiana::VERSION,
+        liana_version: ForestLiana::VERSION.sub('.beta', '-beta'),
         stack: {
            database_type: database_type,
            orm_version: Gem.loaded_specs["activerecord"].version.version,

@@ -1,14 +1,10 @@
 module ForestLiana
   class FiltersParser
-    AGGREGATOR_OPERATOR = %w(and or)
+    AGGREGATOR_OPERATOR = %w(and or).freeze
 
-    def initialize(filters, resource, timezone)
-      begin
-        @filters = JSON.parse(filters)
-      rescue JSON::ParserError
-        raise ForestLiana::Errors::HTTP422Error.new('Invalid filters JSON format')
-      end
-
+    def initialize(filters, resource, timezone, params = nil)
+      @filters = filters
+      @params = params
       @resource = resource
       @operator_date_parser = OperatorDateIntervalParser.new(timezone)
       @joins = []
@@ -17,18 +13,13 @@ module ForestLiana
     def apply_filters
       return @resource unless @filters
 
-      where = parse_aggregation(@filters)
-      return @resource unless where
+      where_clause = parse_aggregation(@filters)
+      return @resource unless where_clause
 
       @joins.each do |join|
-        current_resource = @resource.reflect_on_association(join.name).klass
-        current_resource.include(ArelHelpers::Aliases)
-        current_resource.aliased_as("#{join.name}_#{@resource.table_name}") do |aliased_resource|
-          @resource = @resource.joins(ArelHelpers.join_association(@resource, join.name, Arel::Nodes::OuterJoin, { aliases: [aliased_resource] }))
-        end
       end
 
-      @resource.where(where)
+      @resource.where(where_clause)
     end
 
     def parse_aggregation(node)
@@ -173,10 +164,6 @@ module ForestLiana
       if is_belongs_to(field)
         current_resource = @resource.reflect_on_association(field.split(':').first.to_sym)&.klass
         raise ForestLiana::Errors::HTTP422Error.new("Field '#{field}' not found") unless current_resource
-
-        association = get_association_for_condition(field)
-
-        quoted_table_name = ActiveRecord::Base.connection.quote_table_name("#{association.name}_#{@resource.table_name}")
         field_name = field.split(':')[1]
       else
         quoted_table_name = @resource.quoted_table_name

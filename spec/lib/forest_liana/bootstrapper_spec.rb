@@ -23,14 +23,18 @@ module ForestLiana
 
       let(:expected_application_models) do
         [
+          Address,
           Island,
           Location,
+          Manufacturer,
           Owner,
           Product,
           Reference,
           Town,
           Tree,
-          User
+          User,
+          Driver,
+          Car,
         ]
       end
 
