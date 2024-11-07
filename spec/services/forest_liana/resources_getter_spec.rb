@@ -6,7 +6,7 @@ module ForestLiana
     let(:sort) { 'id' }
     let(:fields) {}
     let(:filters) {}
-    let(:scopes) { {} }
+    let(:scopes) { {'scopes' => {}, 'team' => {'id' => '1', 'name' => 'Operations'}} }
     let(:rendering_id) { 13 }
     let(:user) { { 'id' => '1', 'rendering_id' => rendering_id } }
 
@@ -217,6 +217,21 @@ module ForestLiana
       end
     end
 
+    describe 'when no sorting' do
+      let(:pageSize) { 5 }
+      let(:sort) { nil }
+
+      it 'should get only the 5 last records order by id DESC' do
+        getter.perform
+        records = getter.records
+        count = getter.count
+
+        expect(records.count).to eq 5
+        expect(count).to eq 30
+        expect(records.map(&:id)).to eq [30, 29, 28, 27, 26]
+      end
+    end
+
     describe 'when sorting by a belongs_to association' do
       let(:resource) { Tree }
       let(:sort) { 'owner.name' }
@@ -245,6 +260,31 @@ module ForestLiana
         expect(records.count).to eq 5
         expect(count).to eq 5
         expect(records.map(&:id)).to eq [1, 4, 5, 3, 2]
+      end
+    end
+
+    context 'when fields is given' do
+      let(:resource) { Island }
+      let(:filters) { {
+        field: 'location:id',
+        operator: 'equal',
+        value: 1,
+      }.to_json }
+
+      it 'should get only the expected records' do
+        getter.perform
+        records = getter.records
+        count = getter.count
+
+        expect(records.count).to eq 1
+        expect(count).to eq 1
+        expect(records.map(&:id)).to eq [1]
+      end
+
+      it 'should include associated table only once' do
+        sql_query = getter.perform.to_sql
+        location_includes_count = sql_query.scan('LEFT OUTER JOIN "locations"').count
+        expect(location_includes_count).to eq(1)
       end
     end
 
@@ -480,16 +520,16 @@ module ForestLiana
       let(:filters) { }
       let(:scopes) {
         {
-          'Island' => {
-            'scope'=> {
-              'filter'=> {
+          'scopes' =>
+            {
+              'Island' => {
                 'aggregator' => 'and',
-                'conditions' => [
-                  { 'field' => 'name', 'operator' => 'contains', 'value' => 'u' }
-                ]
-              },
-              'dynamicScopesValues' => { }
-            }
+                'conditions' => [{'field' => 'name', 'operator' => 'contains', 'value' => 'u'}]
+              }
+            },
+          'team' => {
+            'id' => 43,
+            'name' => 'Operations'
           }
         }
       }
